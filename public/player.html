@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Player</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; padding: 10px; }
+        input, button { font-size: 16px; padding: 10px; margin: 5px; }
+        #gameArea { display: none; }
+        .prompt { font-size: 1.5em; margin: 20px 0; }
+        .vote-option { padding: 15px; margin: 10px; border: 2px solid #3498db; cursor: pointer; }
+        .vote-option:hover { background-color: #3498db; color: white; }
+    </style>
+</head>
+<body>
+    <div id="joinScreen">
+        <h1>Join Game</h1>
+        <input type="text" id="roomCode" placeholder="Room Code" value="">
+        <input type="text" id="playerName" placeholder="Your Name">
+        <button onclick="joinGame()">Join Game</button>
+        <p id="joinError" style="color: red;"></p>
+    </div>
+
+    <div id="gameArea">
+        <h2>Hello, <span id="displayName"></span>!</h2>
+        <div id="reconnectBanner" style="display:none; text-align:center; margin-top:20px;">
+            <p style="margin-bottom:10px;">Connection lost. Tap to reconnect.</p>
+            <button id="reconnectButton" onclick="attemptReconnect()">Connect</button>
+        </div>
+        <div id="waitingRoom" style="display: none;">
+            <h3 id="waitingHeader">Waiting for the leader to start the game...</h3>
+            <p id="waitingRuleText">
+                The <strong>first player</strong> to join is the leader.
+                When at least <strong>3 players</strong> have joined, the leader
+                will see a <strong>"Start Game"</strong> button below.
+            </p>
+            <div id="playerCount"></div>
+            <button id="leaderStartBtn" style="display:none;" onclick="leaderStartGame()">Start Game</button>
+        </div>
+
+        <div id="answerScreen" style="display: none;">
+            <div class="prompt" id="currentPrompt"></div>
+            <input type="text" id="answerInput" placeholder="Your funny answer...">
+            <button onclick="submitAnswer()">Submit Answer</button>
+            <p id="answerStatus"></p>
+        </div>
+
+        <div id="votingScreen" style="display: none;">
+            <h3>Vote for the funniest!</h3>
+            <div id="votingQuestion" style="margin-top:8px; margin-bottom:12px; font-size:1.1em;"></div>
+            <div id="voteOptions"></div>
+        </div>
+
+        <div id="resultsScreen" style="display: none;">
+            <h3>Results!</h3>
+            <div id="results"></div>
+        </div>
+
+        <div id="playerGameOver" style="display:none; text-align:center; margin-top:100px; font-size:2.5em; font-weight:bold;">
+            GAME OVER!
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let roomCode = null;
+        let playerId = null;
+        let currentPrompt = null;
+        let playerGameOverInterval = null;
+
+        const STORAGE_KEY = 'quiplashPlayerInfo';
+
+        // Get room code from URL if present
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlRoomCode = urlParams.get('room');
+        if (urlRoomCode) {
+            document.getElementById('roomCode').value = urlRoomCode.toUpperCase();
+        }
+
+        // Pre-fill from local storage if available
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored && !urlRoomCode) {
+                const parsed = JSON.parse(stored);
+                if (parsed.roomCode) {
+                    document.getElementById('roomCode').value = parsed.roomCode;
+                }
+                if (parsed.playerName) {
+                    document.getElementById('playerName').value = parsed.playerName;
+                }
+            }
+        } catch (e) {
+            // ignore storage errors
+        }
+
+        function joinGame() {
+            roomCode = document.getElementById('roomCode').value.toUpperCase();
+            const playerName = document.getElementById('playerName').value;
+
+            if (!roomCode || !playerName) {
+                document.getElementById('joinError').textContent =
+                    'Please enter both room code and name';
+                return;
+            }
+
+            // Store info for later reconnection
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({ roomCode, playerName }));
+            } catch (e) {
+                // ignore storage errors
+            }
+
+            socket.emit('join-game', { roomCode, playerName });
+        }
+
+        socket.on('joined-game', (data) => {
+            playerId = data.playerId;
+
+            // Hide reconnect banner on successful join
+            document.getElementById('reconnectBanner').style.display = 'none';
+
+            document.getElementById('joinScreen').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+            document.getElementById('displayName').textContent =
+                document.getElementById('playerName').value;
+
+            updateGameState(data.gameState);
+        });
+
+        socket.on('error', (data) => {
+            document.getElementById('joinError').textContent = data.message;
+        });
+
+        // Show reconnect prompt when socket disconnects after joining
+        socket.on('disconnect', () => {
+            if (document.getElementById('gameArea').style.display === 'block') {
+                document.getElementById('reconnectBanner').style.display = 'block';
+            }
+        });
+
+        socket.on('connect', () => {
+            // Socket is back up; hide banner until we know if we need to rejoin
+            document.getElementById('reconnectBanner').style.display = 'none';
+        });
+
+        // Update players on all clients when someone joins
+        socket.on('player-joined', (data) => {
+            updateGameState(data.gameState);
+        });
+
+        socket.on('game-started', (data) => {
+            document.getElementById('waitingRoom').style.display = 'none';
+            document.getElementById('answerScreen').style.display = 'block';
+
+            // Find this player's prompt
+            const playerPrompt = data.prompts.find((p) => p.playerId === playerId);
+            if (playerPrompt) {
+                currentPrompt = playerPrompt;
+                document.getElementById('currentPrompt').textContent = playerPrompt.text;
+            }
+        });
+
+        function submitAnswer() {
+            const answer = document.getElementById('answerInput').value;
+            if (!answer.trim()) return;
+
+            socket.emit('submit-answer', {
+                roomCode,
+                playerId,
+                promptId: currentPrompt.promptId,
+                answer,
+            });
+
+            document.getElementById('answerStatus').textContent =
+                'Answer submitted!';
+            document.getElementById('answerInput').disabled = true;
+        }
+
+        socket.on('start-voting', (data) => {
+            document.getElementById('answerScreen').style.display = 'none';
+            document.getElementById('votingScreen').style.display = 'block';
+
+            // Show the question for this voting round between the heading and the buttons
+            if (data.pairs && data.pairs.length > 0) {
+                document.getElementById('votingQuestion').textContent = data.pairs[0].promptText;
+            } else {
+                document.getElementById('votingQuestion').textContent = '';
+            }
+
+            // Render only the answer buttons (question is in its own line above)
+            let html = '';
+            data.pairs.forEach((pair) => {
+                html += `
+                    <div style="margin-bottom:16px; text-align:center;">
+                        <div style="display:flex; align-items:center; justify-content:center; gap:12px;">
+                            <button class="vote-option" onclick="vote('${pair.id}')">
+                                <strong>${pair.player1.answer}</strong>
+                            </button>
+                            <span>VS</span>
+                            <button class="vote-option" onclick="vote('${pair.id}')">
+                                <strong>${pair.player2.answer}</strong>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('voteOptions').innerHTML = html;
+        });
+
+        function vote(voteId) {
+            socket.emit('submit-vote', { roomCode, playerId, voteId });
+            document.getElementById('voteOptions').innerHTML =
+                '<p>Vote submitted! Waiting for others...</p>';
+        }
+
+        function attemptReconnect() {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (!stored) {
+                    document.getElementById('joinError').textContent =
+                        'No saved connection info found.';
+                    return;
+                }
+                const parsed = JSON.parse(stored);
+                if (!parsed.roomCode || !parsed.playerName) {
+                    document.getElementById('joinError').textContent =
+                        'Saved connection info is incomplete.';
+                    return;
+                }
+                roomCode = parsed.roomCode.toUpperCase();
+                document.getElementById('roomCode').value = roomCode;
+                document.getElementById('playerName').value = parsed.playerName;
+
+                socket.emit('join-game', {
+                    roomCode,
+                    playerName: parsed.playerName,
+                });
+            } catch (e) {
+                document.getElementById('joinError').textContent =
+                    'Could not load saved connection info.';
+            }
+        }
+
+        function leaderStartGame() {
+            socket.emit('start-game', { roomCode });
+        }
+
+        socket.on('show-results', (data) => {
+            document.getElementById('votingScreen').style.display = 'none';
+            document.getElementById('resultsScreen').style.display = 'block';
+
+            let html = '';
+            data.results.scores.forEach((score) => {
+                const isYou = score.id === playerId;
+                html += `<p${isYou ? ' style=\"font-weight:bold;\"' : ''}>
+                    ${score.name}: ${score.score} points
+                </p>`;
+            });
+            document.getElementById('results').innerHTML = html;
+        });
+
+        // GAME OVER on player screen
+        socket.on('game-over', (data) => {
+            // Hide all gameplay sections
+            document.getElementById('waitingRoom').style.display = 'none';
+            document.getElementById('answerScreen').style.display = 'none';
+            document.getElementById('votingScreen').style.display = 'none';
+            document.getElementById('resultsScreen').style.display = 'none';
+
+            const over = document.getElementById('playerGameOver');
+            over.style.display = 'block';
+            over.style.visibility = 'visible';
+
+            if (playerGameOverInterval) {
+                clearInterval(playerGameOverInterval);
+            }
+            playerGameOverInterval = setInterval(() => {
+                over.style.visibility =
+                    over.style.visibility === 'hidden' ? 'visible' : 'hidden';
+            }, 500);
+        });
+
+        // Handle the start of the next round
+        socket.on('next-round', (data) => {
+            // Hide results, show answer screen for the new round
+            document.getElementById('resultsScreen').style.display = 'none';
+            document.getElementById('votingScreen').style.display = 'none';
+            document.getElementById('waitingRoom').style.display = 'none';
+            document.getElementById('answerScreen').style.display = 'block';
+
+            // Reset answer input for the new round
+            const answerInput = document.getElementById('answerInput');
+            answerInput.value = '';
+            answerInput.disabled = false;
+            document.getElementById('answerStatus').textContent = '';
+
+            // Find this player's new prompt
+            const playerPrompt = data.prompts.find((p) => p.playerId === playerId);
+            if (playerPrompt) {
+                currentPrompt = playerPrompt;
+                document.getElementById('currentPrompt').textContent = playerPrompt.text;
+            }
+        });
+
+        function updateGameState(state) {
+            if (state.state === 'waiting') {
+                const waitingRoom = document.getElementById('waitingRoom');
+                const waitingHeader = document.getElementById('waitingHeader');
+                const waitingRuleText = document.getElementById('waitingRuleText');
+                const leaderBtn = document.getElementById('leaderStartBtn');
+
+                waitingRoom.style.display = 'block';
+                document.getElementById('playerCount').textContent =
+                    `${state.players.length} players joined`;
+
+                const isLeader = state.leaderId === playerId;
+                const leaderName = state.leaderName || 'the first player';
+
+                if (isLeader) {
+                    waitingHeader.textContent = 'You are the leader.';
+                    waitingRuleText.innerHTML =
+                        'When at least <strong>3 players</strong> have joined, ' +
+                        'tap <strong>"Start Game"</strong> to begin.';
+
+                    leaderBtn.style.display = 'block';
+                    leaderBtn.disabled = state.players.length < 3;
+                } else {
+                    waitingHeader.textContent = `Waiting for ${leaderName} to start the game...`;
+                    waitingRuleText.innerHTML =
+                        `${leaderName} is the <strong>first player</strong> (leader). ` +
+                        'When at least <strong>3 players</strong> have joined, they will start the game.';
+
+                    leaderBtn.style.display = 'none';
+                }
+            }
+        }
+    </script>
+</body>
+</html>
