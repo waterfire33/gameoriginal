@@ -2,9 +2,8 @@
 
 A real-time social party game inspired by Quiplash, built with Node.js, Express, Socket.IO, and modern web technologies. Players submit funny answers to AI-generated prompts and vote on the best ones in this hilarious multiplayer experience!
 
-![Game Preview](https://via.placeholder.com/800x400/1a1a1a/5dade2?text=Multiplayer+Party+Game)
 
-## ✨ Features
+### ✨ Features
 
 ### 🎮 Core Gameplay
 - **Real-time multiplayer** with WebSocket connections
@@ -264,13 +263,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🎉 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/multiplayer-party-game/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/multiplayer-party-game/discussions)
-- **Email**: your.email@example.com
+- **Issues**: [GitHub Issues](https://github.com/mmknisali/gameoriginal/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/mmknisali/gameoriginal/discussions)
+- **Email**: alinader5525@gmail.com
 
 ---
 
 **Ready to laugh?** 🎲 Start your multiplayer party game now!
 
-*Made with ❤️ for hilarious game nights*</content>
-<parameter name="filePath">/home/ali/workspace/mmknisali/gameoriginal/README.md
+*Made with ❤️
