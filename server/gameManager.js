@@ -7,9 +7,9 @@ class GameManager {
     this.playerSocketMap = new Map(); // socketId -> { roomCode, playerId }
   }
 
-  createGame(gameName, hostSocketId, hostName) {
+  createGame(gameName, hostSocketId, hostName, settings = {}, emitFunction = null) {
     const roomCode = this.generateRoomCode();
-    this.games.set(roomCode, new Game(roomCode, gameName, hostSocketId, hostName));
+    this.games.set(roomCode, new Game(roomCode, gameName, hostSocketId, hostName, settings, emitFunction));
     return roomCode;
   }
 
@@ -70,7 +70,7 @@ class GameManager {
 }
 
 class Game {
-  constructor(roomCode, name, hostSocketId, hostName) {
+  constructor(roomCode, name, hostSocketId, hostName, settings = {}, emitFunction = null) {
     this.id = uuidv4();
     this.roomCode = roomCode;
     this.name = name;
@@ -79,12 +79,23 @@ class Game {
     this.hostSocketId = hostSocketId;
     this.hostName = hostName;
 
+    // Configurable game settings
+    this.settings = {
+      maxRounds: settings.maxRounds || 3,
+      answerTime: settings.answerTime || 60, // seconds
+      voteTime: settings.voteTime || 30,    // seconds
+      intermissionTime: settings.intermissionTime || 10, // seconds
+      gameMode: settings.gameMode || 'classic', // classic, speed, creative
+      ...settings
+    };
+
     this.players = [];
     this.hostId = null; // kept for compatibility but unused for gameplay
     this.leaderId = null; // first player to join; controls game start
-    this.state = 'waiting'; // waiting, answering, voting, results
+    this.state = 'waiting'; // waiting, answering, intermission, voting, results
     this.round = 0;
-    this.maxRounds = 3;
+
+    this.emit = emitFunction;
 
     // Game data
     // Prompts are lazily loaded from the local AI model on first game start.
@@ -144,7 +155,7 @@ class Game {
     this.state = 'answering';
     this.round = 1;
     this.currentPrompts = this.assignPrompts();
-    this.startTimer('answer', 60); // 60 seconds to answer
+    this.startTimer('answer', this.settings.answerTime);
   }
 
   async loadPromptsFromAIIfNeeded() {
@@ -264,7 +275,7 @@ class Game {
     }
 
     this.state = 'voting';
-    this.startTimer('vote', 30); // 30 seconds to vote
+    this.startTimer('vote', this.settings.voteTime);
 
     return this.votingPairs;
   }
@@ -310,19 +321,22 @@ class Game {
   }
 
   startNextRound() {
-    if (this.round >= this.maxRounds) {
+    if (this.round >= this.settings.maxRounds) {
       this.state = 'finished';
       return false;
     }
 
     this.round++;
-    this.state = 'answering';
-    this.currentPrompts = this.assignPrompts();
-    this.answers.clear();
-    this.votes.clear();
-    this.votingPairs = [];
+    this.state = 'intermission';
+    this.startTimer('intermission', this.settings.intermissionTime);
 
     return true;
+  }
+
+  startAnsweringPhase() {
+    this.state = 'answering';
+    this.currentPrompts = this.assignPrompts();
+    this.startTimer('answer', this.settings.answerTime);
   }
 
   getPlayer(playerId) {
@@ -349,12 +363,26 @@ class Game {
         }
       }, 1000),
     });
+
+    // Emit timer start for client countdown
+    if (this.emit) {
+      this.emit('timer-start', { phase: timerName, duration: seconds });
+    }
   }
 
   handleTimerEnd(timerName) {
     this.clearTimer(timerName);
 
-    if (timerName === 'answer' && this.state === 'answering') {
+    if (timerName === 'intermission' && this.state === 'intermission') {
+      this.startAnsweringPhase();
+      if (this.emit) {
+        this.emit('start-answering', {
+          round: this.round,
+          maxRounds: this.settings.maxRounds,
+          prompts: this.getCurrentPrompts(),
+        });
+      }
+    } else if (timerName === 'answer' && this.state === 'answering') {
       // Auto-submit random answers for players who didn't answer
       this.players.forEach((player) => {
         if (!this.answers.has(player.id)) {
@@ -389,7 +417,7 @@ class Game {
       name: this.name,
       state: this.state,
       round: this.round,
-      maxRounds: this.maxRounds,
+      maxRounds: this.settings.maxRounds,
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,

@@ -38,6 +38,11 @@ const gameManager = new GameManager();
 app.use(express.static('../public'));
 app.use(express.json());
 
+// Redirect root to player.html for easier access
+app.get('/', (req, res) => {
+  res.redirect('/player.html');
+});
+
 // Game state API (optional)
 app.get('/api/game/:roomCode', (req, res) => {
   const game = gameManager.getGame(req.params.roomCode);
@@ -50,7 +55,7 @@ io.on('connection', (socket) => {
 
   // Host creates a new game (host does not play)
   socket.on('create-game', ({ playerName, gameName }) => {
-    const roomCode = gameManager.createGame(gameName, socket.id, playerName);
+    const roomCode = gameManager.createGame(gameName, socket.id, playerName, settings, (event, data) => io.to(roomCode).emit(event, data));
 
     socket.join(roomCode);
     socket.emit('game-created', {
@@ -129,13 +134,12 @@ io.on('connection', (socket) => {
       const results = game.calculateResults();
       io.to(roomCode).emit('show-results', { results });
 
-      // After 5 seconds, start next round
+      // After 5 seconds, start intermission/next round
       setTimeout(() => {
         if (game.startNextRound()) {
-          io.to(roomCode).emit('next-round', {
+          io.to(roomCode).emit('intermission', {
             round: game.round,
-            maxRounds: game.maxRounds,
-            prompts: game.getCurrentPrompts(),
+            maxRounds: game.settings.maxRounds,
           });
         } else {
           io.to(roomCode).emit('game-over', {
@@ -146,17 +150,14 @@ io.on('connection', (socket) => {
     }
   });
 
-  // First player (leader) starts the game once enough players have joined
+  // Host starts the game once enough players have joined
   socket.on('start-game', async ({ roomCode }) => {
     const game = gameManager.getGame(roomCode);
     if (!game) return;
 
-    const playerInfo = gameManager.getPlayerInfo(socket.id);
-    if (!playerInfo || playerInfo.roomCode !== roomCode) return;
-
-    // Only the leader can start the game
-    if (playerInfo.playerId !== game.leaderId) {
-      socket.emit('error', { message: 'Only the first player to join can start the game.' });
+    // Only host can start the game
+    if (socket.id !== game.hostSocketId) {
+      socket.emit('error', { message: 'Only the host can start the game.' });
       return;
     }
 
@@ -196,6 +197,32 @@ server.listen(PORT, () => {
   }
 
   if (lanIps.length === 0) {
-    console.log('No LAN IPv4 address detected (are you connected to a network?).');
+    console.log('❌ No LAN IPv4 address detected. Are you connected to a network?');
+  } else {
+    networkBaseUrl = `http://${lanIps[0]}:${PORT}`;
+    console.log('\n🌐 Network Access URLs:');
+    lanIps.forEach(ip => {
+      console.log(`   📡 http://${ip}:${PORT} (for all devices on the same network)`);
+      console.log(`   👑 Host: http://${ip}:${PORT}/host.html`);
+      console.log(`   🎯 Player: http://${ip}:${PORT}`);
+    });
+
+    // Try to advertise via mDNS
+    try {
+      const avahi = spawn('avahi-publish-service', ['game-server', '_http._tcp', PORT], {
+        stdio: 'pipe', // Don't inherit to avoid cluttering console
+        detached: true
+      });
+
+      avahi.unref();
+
+      console.log('\n🔍 mDNS Service Discovery:');
+      console.log('   If supported on your network: http://game-server.local');
+      console.log('   Note: May not work with VPNs like Tailscale');
+    } catch (err) {
+      console.log('   mDNS advertising failed - use IP addresses above');
+    }
+
+    console.log('\n💡 Share the network URL with friends on the same WiFi/LAN!');
   }
 });

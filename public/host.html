@@ -1,14 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Game Host</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        #roomCode { font-size: 3em; font-weight: bold; color: #3498db; }
-        .player-list { margin: 20px 0; }
-        .player { padding: 10px; border: 1px solid #ddd; margin: 5px; }
-        .host { background-color: #ffeaa7; }
-    </style>
+    <title>Game Host - Multiplayer Party Game</title>
+    <meta name="description" content="Host a multiplayer party game. Create rooms and manage players for fun voting games.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+    <link rel="stylesheet" href="host.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
     <h1>Game Host</h1>
@@ -22,10 +19,12 @@
     <div id="gameLobby" style="display: none;">
         <h2>Room Code: <span id="roomCode"></span></h2>
         <p>Players join at: <span id="joinUrl"></span></p>
+        <div style="text-align: center; margin: 1rem 0;">
+            <h3 style="color: var(--accent); margin-bottom: 0.5rem;">📱 Scan QR Code to Join</h3>
+            <div id="qrCode"></div>
+        </div>
 
-        <p><strong>Rule:</strong> The <u>first player</u> to join becomes the leader.
-        When at least <strong>3 players</strong> have joined, the leader can tap
-        <strong>"Start Game"</strong> on their phone to begin.</p>
+        <button id="hostStartBtn" onclick="hostStartGame()" style="margin: 1rem 0;">Start Game</button>
 
         <div class="player-list" id="playerList"></div>
     </div>
@@ -33,7 +32,12 @@
     <div id="gameArea" style="display: none;">
         <h2>Round <span id="currentRound"></span> of <span id="totalRounds"></span></h2>
         <div id="gameState"></div>
-        <div id="timer"></div>
+        <div id="timerDisplay" class="timer-display" style="display: none;">
+            <div class="timer-bar">
+                <div class="timer-fill" id="timerFill"></div>
+            </div>
+            <div class="timer-text" id="timerText">60</div>
+        </div>
         <div id="results"></div>
         <div id="gameOverBanner" style="display:none; text-align:center; margin-top:100px; font-size:3em; font-weight:bold;">GAME OVER!</div>
     </div>
@@ -43,12 +47,97 @@
         const socket = io();
         let roomCode = null;
         let gameOverInterval = null;
+        let timerInterval = null;
+
+        socket.on('connect', () => {
+            console.log('Socket connected');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Socket disconnected');
+        });
+
+        // Timer handling
+        socket.on('timer-start', (data) => {
+            startTimerDisplay(data.phase, data.duration);
+        });
+
+        function startTimerDisplay(phase, duration) {
+            clearInterval(timerInterval);
+            const timerDisplay = document.getElementById('timerDisplay');
+            const timerFill = document.getElementById('timerFill');
+            const timerText = document.getElementById('timerText');
+
+            timerDisplay.style.display = 'block';
+            let timeLeft = duration;
+
+            timerText.textContent = timeLeft;
+            timerFill.style.width = '100%';
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                const percentage = (timeLeft / duration) * 100;
+                timerFill.style.width = percentage + '%';
+                timerText.textContent = timeLeft;
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    timerDisplay.style.display = 'none';
+                }
+            }, 1000);
+        }
 
         function createGame() {
             const gameName = document.getElementById('gameName').value;
             const playerName = document.getElementById('hostName').value;
 
+            if (!gameName || !playerName) {
+                alert('Please enter both game name and your name');
+                return;
+            }
+
             socket.emit('create-game', { playerName, gameName });
+        }
+
+        function hostStartGame() {
+            console.log('Host start game clicked, roomCode:', roomCode, 'socket connected:', socket.connected);
+            if (!roomCode) {
+                alert('Game not created yet');
+                return;
+            }
+            socket.emit('start-game', { roomCode });
+        }
+
+        function updateGameState(state) {
+            console.log('Updating game state:', state);
+            if (state.players) {
+                let html = '';
+                state.players.forEach(player => {
+                    const status = player.isConnected ? 'online' : 'offline';
+                    const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
+                    html += `<div class="player">
+                        ${player.name} (${player.score} pts)
+                        ${player.isLeader ? ' - LEADER' : ''}<br>
+                        <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
+                    </div>`;
+                });
+                document.getElementById('playerList').innerHTML = html;
+
+                // Enable/disable start button based on players
+                const startBtn = document.getElementById('hostStartBtn');
+                startBtn.disabled = state.players.length < 3;
+                startBtn.textContent = state.players.length < 3 ?
+                    `Need ${3 - state.players.length} more player(s)` :
+                    'Start Game';
+            }
+
+            // Always update total rounds when provided, even if round is 0
+            if (typeof state.maxRounds !== 'undefined') {
+                document.getElementById('totalRounds').textContent = state.maxRounds;
+            }
+            if (typeof state.round !== 'undefined') {
+                document.getElementById('currentRound').textContent = state.round;
+            }
         }
 
         socket.on('game-created', (data) => {
@@ -65,19 +154,51 @@
 
             document.getElementById('createGame').style.display = 'none';
             document.getElementById('gameLobby').style.display = 'block';
-            document.getElementById('gameArea').style.display = 'none';
             document.getElementById('results').innerHTML = '';
             document.getElementById('gameState').innerHTML = '';
 
             document.getElementById('roomCode').textContent = roomCode;
-            document.getElementById('joinUrl').textContent =
-                `${window.location.origin}/player.html?room=${roomCode}`;
+            const joinUrl = data.joinUrl || `${window.location.origin}/player.html?room=${roomCode}`;
+            document.getElementById('joinUrl').textContent = joinUrl;
 
+            // Generate QR code
+            const qrContainer = document.getElementById('qrCode');
+            qrContainer.innerHTML = ''; // Clear previous
+            new QRCode(qrContainer, {
+                text: joinUrl,
+                width: 200,
+                height: 200,
+                colorDark: "#5dade2",
+                colorLight: "#1a1a1a",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            console.log('Game created, roomCode:', roomCode, 'joinUrl:', joinUrl);
             updateGameState(data.gameState);
         });
 
         socket.on('player-joined', (data) => {
             updateGameState(data.gameState);
+        });
+
+        socket.on('error', (data) => {
+            alert('Error: ' + data.message);
+        });
+
+        // Intermission between rounds
+        socket.on('intermission', (data) => {
+            // Clear previous round's results
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('gameState').innerHTML = 'Get ready for the next round!';
+
+            updateGameState(data);
+        });
+
+        // Start of answering phase after intermission
+        socket.on('start-answering', (data) => {
+            console.log('Received start-answering event:', data);
+            document.getElementById('gameState').innerHTML = '';
+            updateGameState(data);
         });
 
         socket.on('game-started', (data) => {

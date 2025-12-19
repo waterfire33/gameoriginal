@@ -1,16 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Player</title>
+    <title>Join Game - Multiplayer Party Game</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { font-family: Arial, sans-serif; padding: 10px; }
-        input, button { font-size: 16px; padding: 10px; margin: 5px; }
-        #gameArea { display: none; }
-        .prompt { font-size: 1.5em; margin: 20px 0; }
-        .vote-option { padding: 15px; margin: 10px; border: 2px solid #3498db; cursor: pointer; }
-        .vote-option:hover { background-color: #3498db; color: white; }
-    </style>
+    <meta name="description" content="Join a multiplayer party game. Enter room code and play fun voting games with friends.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+    <link rel="stylesheet" href="player.css">
 </head>
 <body>
     <div id="joinScreen">
@@ -39,6 +34,12 @@
         </div>
 
         <div id="answerScreen" style="display: none;">
+            <div id="timerDisplay" class="timer-display" style="display: none;">
+                <div class="timer-bar">
+                    <div class="timer-fill" id="timerFill"></div>
+                </div>
+                <div class="timer-text" id="timerText">60</div>
+            </div>
             <div class="prompt" id="currentPrompt"></div>
             <input type="text" id="answerInput" placeholder="Your funny answer...">
             <button onclick="submitAnswer()">Submit Answer</button>
@@ -68,6 +69,7 @@
         let playerId = null;
         let currentPrompt = null;
         let playerGameOverInterval = null;
+        let timerInterval = null;
 
         const STORAGE_KEY = 'quiplashPlayerInfo';
 
@@ -148,6 +150,41 @@
         socket.on('player-joined', (data) => {
             updateGameState(data.gameState);
         });
+
+        // Timer handling
+        socket.on('timer-start', (data) => {
+            startTimerDisplay(data.phase, data.duration);
+        });
+
+        function startTimerDisplay(phase, duration) {
+            clearInterval(timerInterval);
+            const timerDisplay = document.getElementById('timerDisplay');
+            const timerFill = document.getElementById('timerFill');
+            const timerText = document.getElementById('timerText');
+
+            if (phase === 'answer' || phase === 'vote') {
+                timerDisplay.style.display = 'block';
+            } else {
+                timerDisplay.style.display = 'none';
+                return;
+            }
+
+            let timeLeft = duration;
+            timerText.textContent = timeLeft;
+            timerFill.style.width = '100%';
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                const percentage = (timeLeft / duration) * 100;
+                timerFill.style.width = percentage + '%';
+                timerText.textContent = timeLeft;
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    timerDisplay.style.display = 'none';
+                }
+            }, 1000);
+        }
 
         socket.on('game-started', (data) => {
             document.getElementById('waitingRoom').style.display = 'none';
@@ -281,11 +318,20 @@
             }, 500);
         });
 
-        // Handle the start of the next round
-        socket.on('next-round', (data) => {
-            // Hide results, show answer screen for the new round
+        // Intermission between rounds
+        socket.on('intermission', (data) => {
+            // Hide results, show intermission
             document.getElementById('resultsScreen').style.display = 'none';
             document.getElementById('votingScreen').style.display = 'none';
+            document.getElementById('waitingRoom').style.display = 'block';
+
+            document.getElementById('waitingHeader').textContent = `Intermission - Round ${data.round} of ${data.maxRounds}`;
+            document.getElementById('waitingRuleText').innerHTML = 'Get ready for the next round! ⏰';
+        });
+
+        // Start of answering phase after intermission
+        socket.on('start-answering', (data) => {
+            // Hide intermission, show answer screen
             document.getElementById('waitingRoom').style.display = 'none';
             document.getElementById('answerScreen').style.display = 'block';
 
@@ -321,15 +367,14 @@
                     waitingHeader.textContent = 'You are the leader.';
                     waitingRuleText.innerHTML =
                         'When at least <strong>3 players</strong> have joined, ' +
-                        'tap <strong>"Start Game"</strong> to begin.';
+                        'the host will start the game.';
 
-                    leaderBtn.style.display = 'block';
-                    leaderBtn.disabled = state.players.length < 3;
+                    leaderBtn.style.display = 'none';
                 } else {
-                    waitingHeader.textContent = `Waiting for ${leaderName} to start the game...`;
+                    waitingHeader.textContent = `Waiting for the host to start the game...`;
                     waitingRuleText.innerHTML =
-                        `${leaderName} is the <strong>first player</strong> (leader). ` +
-                        'When at least <strong>3 players</strong> have joined, they will start the game.';
+                        'When at least <strong>3 players</strong> have joined, ' +
+                        'the host will start the game.';
 
                     leaderBtn.style.display = 'none';
                 }
