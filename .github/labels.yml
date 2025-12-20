@@ -1,0 +1,105 @@
+status/duplicate:
+  description: "This issue or pull request already exists"
+  color: "cfd3d7"
+
+status/invalid:
+  description: "This doesn't seem right"
+  color: "e4e669"
+
+status/policy-violation:
+  description: "PR violates repository policies or guidelines"
+  color: "d73a4a"
+
+type/bug:
+  description: "Something isn't working"
+  color: "d73a4a"
+
+type/documentation:
+  description: "Improvements or additions to documentation"
+  color: "0075ca"
+
+type/enhancement:
+  description: "New feature or request"
+  color: "a2eeef"
+
+type/epic:
+  description: "Large-scale initiatives spanning multiple issues"
+  color: "795548"
+
+type/question:
+  description: "Further information is requested"
+  color: "d876e3"
+
+wontfix:
+  description: "This will not be worked on"
+  color: "ffffff"
+
+type/upgrade:
+  description: "Upgrading dependencies, frameworks, or infrastructure"
+  color: "F9D0C4"
+
+type/assessment:
+  description: "Code review, security audit, or feature evaluation"
+  color: "5319E7"
+
+status/parent:
+  description: "Parent issue tracking multiple sub-issues"
+  color: "0E8A16"
+
+type/test:
+  description: "Testing-related changes or fixes"
+  color: "C2E0C6"
+
+type/cleanup:
+  description: "Code cleanup, removing dead code, or organization"
+  color: "BFD4F2"
+
+type/refactor:
+  description: "Code refactoring without changing functionality"
+  color: "FBCA04"
+
+type/regression:
+  description: "Bug that broke previously working feature"
+  color: "006B75"
+
+type/integration:
+  description: "Integration with external services or APIs"
+  color: "006B75"
+
+platform/browser:
+  description: "Browser-specific issues or compatibility"
+  color: "FBCA04"
+
+type/performance:
+  description: "Performance optimizations or improvements"
+  color: "F9D0C4"
+
+type/qa:
+  description: "Quality assurance, testing, or validation"
+  color: "BFDADC"
+
+type/frontend:
+  description: "Frontend/UI changes or fixes"
+  color: "E99695"
+
+type/docs:
+  description: "Documentation updates or fixes"
+  color: "FEF2C0"
+
+type/security:
+  description: "Security vulnerabilities or fixes"
+  color: "FEF2C0"
+
+type/audit:
+  description: "Audit logs, compliance, or tracking"
+  color: "BFDADC"
+
+priority/low:
+  description: "Low priority issues"
+  color: "ededed"
+
+type/backend:
+  description: "Backend/server-side changes or fixes"
+  color: "BFD4F2"
+
+
