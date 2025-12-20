@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Game Host - Multiplayer Party Game</title>
+    <meta name="description" content="Host a multiplayer party game. Create rooms and manage players for fun voting games.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+    <link rel="stylesheet" href="host.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+    <h1>Game Host</h1>
+
+    <div id="createGame">
+        <input type="text" id="gameName" placeholder="Game Name">
+        <input type="text" id="hostName" placeholder="Your Name">
+        <input type="number" id="maxRounds" placeholder="Number of rounds" value="3" min="1" max="10">
+        <label for="votingMode">Voting Mode:</label>
+        <select id="votingMode">
+            <option value="individual">Individual Winners</option>
+            <option value="pairs">Pairs (VS)</option>
+        </select>
+        <button onclick="createGame()">Create Game</button>
+    </div>
+
+    <div id="gameLobby" style="display: none;">
+        <h2>Room Code: <span id="roomCode"></span></h2>
+        <p>Players join at: <span id="joinUrl"></span></p>
+        <div style="text-align: center; margin: 1rem 0;">
+            <h3 style="color: var(--accent); margin-bottom: 0.5rem;">📱 Scan QR Code to Join</h3>
+            <div id="qrCode"></div>
+        </div>
+
+        <button id="hostStartBtn" onclick="hostStartGame()" style="margin: 1rem 0;">Start Game</button>
+
+        <div class="player-list" id="playerList"></div>
+    </div>
+
+    <div id="gameArea" style="display: none;">
+        <h2>Round <span id="currentRound"></span> of <span id="totalRounds"></span></h2>
+        <div id="gameState"></div>
+        <div id="timerDisplay" class="timer-display" style="display: none;">
+            <div class="timer-bar">
+                <div class="timer-fill" id="timerFill"></div>
+            </div>
+            <div class="timer-text" id="timerText">60</div>
+        </div>
+        <div id="results"></div>
+        <div id="gameOverBanner" style="display:none; text-align:center; margin-top:100px; font-size:3em; font-weight:bold;">GAME OVER!</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let roomCode = null;
+        let gameOverInterval = null;
+        let timerInterval = null;
+
+        socket.on('connect', () => {
+            console.log('Socket connected');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Socket disconnected');
+        });
+
+        // Timer handling
+        socket.on('timer-start', (data) => {
+            startTimerDisplay(data.phase, data.duration);
+        });
+
+        function startTimerDisplay(phase, duration) {
+            clearInterval(timerInterval);
+            const timerDisplay = document.getElementById('timerDisplay');
+            const timerFill = document.getElementById('timerFill');
+            const timerText = document.getElementById('timerText');
+
+            timerDisplay.style.display = 'block';
+            let timeLeft = duration;
+
+            timerText.textContent = timeLeft;
+            timerFill.style.width = '100%';
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                const percentage = (timeLeft / duration) * 100;
+                timerFill.style.width = percentage + '%';
+                timerText.textContent = timeLeft;
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    timerDisplay.style.display = 'none';
+                }
+            }, 1000);
+        }
+
+        function createGame() {
+            const gameName = document.getElementById('gameName').value;
+            const playerName = document.getElementById('hostName').value;
+            const maxRounds = parseInt(document.getElementById('maxRounds').value);
+            const votingMode = document.getElementById('votingMode').value;
+
+            if (!gameName || !playerName) {
+                alert('Please enter both game name and your name');
+                return;
+            }
+
+            socket.emit('create-game', { playerName, gameName, maxRounds, votingMode });
+        }
+
+        function hostStartGame() {
+            console.log('Host start game clicked, roomCode:', roomCode, 'socket connected:', socket.connected);
+            if (!roomCode) {
+                alert('Game not created yet');
+                return;
+            }
+            socket.emit('start-game', { roomCode });
+        }
+
+        function updateGameState(state) {
+            console.log('Updating game state:', state);
+            if (state.players) {
+                let html = '';
+                state.players.forEach(player => {
+                    const status = player.isConnected ? 'online' : 'offline';
+                    const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
+                    html += `<div class="player">
+                        ${player.name} (${player.score} pts)
+                        ${player.isLeader ? ' - LEADER' : ''}<br>
+                        <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
+                    </div>`;
+                });
+                document.getElementById('playerList').innerHTML = html;
+
+                // Enable/disable start button based on players
+                const startBtn = document.getElementById('hostStartBtn');
+                startBtn.disabled = state.players.length < 2;
+                startBtn.textContent = state.players.length < 2 ?
+                    `Need ${2 - state.players.length} more player(s)` :
+                    'Start Game';
+            }
+
+            // Always update total rounds when provided, even if round is 0
+            if (typeof state.maxRounds !== 'undefined') {
+                document.getElementById('totalRounds').textContent = state.maxRounds;
+            }
+            if (typeof state.round !== 'undefined') {
+                document.getElementById('currentRound').textContent = state.round;
+            }
+        }
+
+        socket.on('game-created', (data) => {
+            roomCode = data.roomCode;
+
+            // Reset any previous GAME OVER state
+            if (gameOverInterval) {
+                clearInterval(gameOverInterval);
+                gameOverInterval = null;
+            }
+            const gameOverBanner = document.getElementById('gameOverBanner');
+            gameOverBanner.style.display = 'none';
+            gameOverBanner.style.visibility = 'visible';
+
+            document.getElementById('createGame').style.display = 'none';
+            document.getElementById('gameLobby').style.display = 'block';
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('gameState').innerHTML = '';
+
+            document.getElementById('roomCode').textContent = roomCode;
+            const joinUrl = data.joinUrl || `${window.location.origin}/player.html?room=${roomCode}`;
+            document.getElementById('joinUrl').textContent = joinUrl;
+
+            // Generate QR code
+            const qrContainer = document.getElementById('qrCode');
+            qrContainer.innerHTML = ''; // Clear previous
+            new QRCode(qrContainer, {
+                text: joinUrl,
+                width: 200,
+                height: 200,
+                colorDark: "#5dade2",
+                colorLight: "#1a1a1a",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            console.log('Game created, roomCode:', roomCode, 'joinUrl:', joinUrl);
+            updateGameState(data.gameState);
+        });
+
+        socket.on('player-joined', (data) => {
+            updateGameState(data.gameState);
+        });
+
+        socket.on('error', (data) => {
+            alert('Error: ' + data.message);
+        });
+
+        // Intermission between rounds
+        socket.on('intermission', (data) => {
+            // Clear previous round's results
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('gameState').innerHTML = 'Get ready for the next round!';
+
+            updateGameState(data);
+        });
+
+        // Start of answering phase after intermission
+        socket.on('start-answering', (data) => {
+            console.log('Received start-answering event:', data);
+            document.getElementById('gameState').innerHTML = '';
+            updateGameState(data);
+        });
+
+        socket.on('game-started', (data) => {
+            document.getElementById('gameLobby').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+            updateGameState(data);
+        });
+
+        socket.on('answer-submitted', (data) => {
+            document.getElementById('gameState').innerHTML =
+                `Answers remaining: ${data.answersRemaining}`;
+        });
+
+        socket.on('start-voting', (data) => {
+            let html = '<h3>Voting Time!</h3>';
+            data.pairs.forEach(pair => {
+                html += `<div class="pair">
+                    <p><strong>Question:</strong> ${pair.promptText}</p>
+                    <p>${pair.player1.answer}</p>
+                    <p>VS</p>
+                    <p>${pair.player2.answer}</p>
+                </div>`;
+            });
+            document.getElementById('gameState').innerHTML = html;
+        });
+
+        socket.on('show-results', (data) => {
+            let html = '<h3>Results!</h3>';
+            data.results.scores.forEach(score => {
+                html += `<p>${score.name}: ${score.score}</p>`;
+            });
+            document.getElementById('results').innerHTML = html;
+        });
+
+        // Game has fully finished (after final round)
+        socket.on('game-over', (data) => {
+            // Clear main game area except for GAME OVER banner
+            document.getElementById('gameLobby').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+            document.getElementById('gameState').innerHTML = '';
+            document.getElementById('timer').innerHTML = '';
+            document.getElementById('results').innerHTML = '';
+
+            const gameOverBanner = document.getElementById('gameOverBanner');
+            gameOverBanner.style.display = 'block';
+            gameOverBanner.style.visibility = 'visible';
+
+            // Make GAME OVER appear / disappear every 2 seconds
+            if (gameOverInterval) {
+                clearInterval(gameOverInterval);
+            }
+            gameOverInterval = setInterval(() => {
+                gameOverBanner.style.visibility =
+                    gameOverBanner.style.visibility === 'hidden' ? 'visible' : 'visible';
+            }, 500);
+        });
+
+        // Start of a new round after results
+        socket.on('next-round', (data) => {
+            // Clear previous round's results and voting state
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('gameState').innerHTML = '';
+
+            // Show game area and update round info
+            document.getElementById('gameArea').style.display = 'block';
+            updateGameState(data);
+        });
+
+        function updateGameState(state) {
+            if (state.players) {
+                let html = '';
+                state.players.forEach(player => {
+                    const status = player.isConnected ? 'online' : 'offline';
+                    const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
+                    html += `<div class="player">
+                        ${player.name} (${player.score} pts)
+                        ${player.isLeader ? ' - LEADER' : ''}<br>
+                        <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
+                    </div>`;
+                });
+                document.getElementById('playerList').innerHTML = html;
+
+                // Enable/disable start button based on players
+                const startBtn = document.getElementById('hostStartBtn');
+                startBtn.disabled = state.players.length < 2;
+                startBtn.textContent = state.players.length < 2 ?
+                    `Need ${2 - state.players.length} more player(s)` :
+                    'Start Game';
+            }
+
+            // Always update total rounds when provided, even if round is 0
+            if (typeof state.maxRounds !== 'undefined') {
+                document.getElementById('totalRounds').textContent = state.maxRounds;
+            }
+            if (typeof state.round !== 'undefined') {
+                document.getElementById('currentRound').textContent = state.round;
+            }
+        }
+    </script>
+</body>
+</html>

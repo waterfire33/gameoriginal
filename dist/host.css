@@ -1,0 +1,281 @@
+/* Host Page Styles with Dark Mode Only */
+
+/* CSS Custom Properties - Dark Mode Only */
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --accent: #5dade2;
+  --accent-hover: #3498db;
+  --border: #404040;
+  --card-bg: #2d2d2d;
+  --shadow: rgba(0, 0, 0, 0.3);
+  --success: #58d68d;
+  --warning: #f7dc6f;
+  --danger: #ec7063;
+}
+
+/* Reset and Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  padding: 20px;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Typography */
+h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 2rem;
+  background: linear-gradient(45deg, var(--accent), var(--accent-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+h2 {
+  font-size: 1.8rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+h3 {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Form Elements */
+input, button {
+  font-family: inherit;
+  font-size: 1rem;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 8px 0;
+  transition: all 0.3s ease;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  width: 100%;
+  max-width: 300px;
+}
+
+input:focus, button:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+button {
+  background: linear-gradient(45deg, var(--accent), var(--accent-hover));
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: none;
+  box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+}
+
+button:hover:not(:active) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+}
+
+button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Layout Containers */
+#createGame, #gameLobby, #gameArea {
+  max-width: 800px;
+  margin: 2rem auto;
+  background: var(--card-bg);
+  padding: 2rem;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px var(--shadow);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+}
+
+#gameArea {
+  text-align: center;
+}
+
+/* Room Code */
+#roomCode {
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--accent);
+  margin: 1rem 0;
+  text-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
+  letter-spacing: 2px;
+}
+
+/* QR Code */
+#qrCode {
+  display: inline-block;
+  padding: 1rem;
+  background: var(--card-bg);
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  box-shadow: 0 4px 15px var(--shadow);
+  margin: 1rem 0;
+}
+
+#qrCode img {
+  border-radius: 8px;
+}
+
+/* Player List */
+.player-list {
+  margin: 2rem 0;
+}
+
+.player {
+  background: var(--bg-secondary);
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0.5rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.3s ease;
+}
+
+.player:hover {
+  transform: translateX(5px);
+  box-shadow: 0 4px 15px var(--shadow);
+}
+
+.player.host {
+  background: linear-gradient(45deg, #fff3cd, #ffeaa7);
+  border-color: var(--warning);
+}
+
+/* Game State */
+#gameState {
+  margin: 1rem 0;
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+
+/* Timer Display */
+.timer-display {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.timer-bar {
+  width: 100%;
+  max-width: 300px;
+  height: 20px;
+  background: var(--border);
+  border-radius: 10px;
+  margin: 0 auto 0.5rem;
+  overflow: hidden;
+}
+
+.timer-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  border-radius: 10px;
+  transition: width 1s linear;
+  width: 100%;
+}
+
+.timer-text {
+  font-size: 2rem;
+  font-weight: bold;
+  color: var(--accent);
+}
+
+/* Results */
+#results p {
+  font-size: 1.1rem;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+/* Game Over Banner */
+#gameOverBanner {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 4rem;
+  font-weight: bold;
+  color: var(--accent);
+  text-shadow: 0 0 20px var(--accent);
+  animation: pulse 0.5s infinite alternate;
+}
+
+@keyframes pulse {
+  from { opacity: 1; }
+  to { opacity: 0.5; }
+}
+
+/* Status Messages */
+#statusDiv {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+  font-weight: 500;
+  text-align: center;
+}
+
+#statusDiv:empty {
+  display: none;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  body {
+    padding: 10px;
+  }
+
+  #createGame, #gameLobby, #gameArea {
+    padding: 1rem;
+    margin: 1rem auto;
+  }
+
+  .timer-text {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 2rem;
+  }
+
+  #roomCode {
+    font-size: 2rem;
+  }
+
+  input, button {
+    font-size: 0.9rem;
+    padding: 10px 12px;
+  }
+}

@@ -26,10 +26,11 @@
             <h3 id="waitingHeader">Waiting for the leader to start the game...</h3>
             <p id="waitingRuleText">
                 The <strong>first player</strong> to join is the leader.
-                When at least <strong>2 players</strong> have joined, the leader
+                When at least <strong>3 players</strong> have joined, the leader
                 will see a <strong>"Start Game"</strong> button below.
             </p>
             <div id="playerCount"></div>
+            <button id="leaderStartBtn" style="display:none;" onclick="leaderStartGame()">Start Game</button>
         </div>
 
         <div id="answerScreen" style="display: none;">
@@ -249,15 +250,15 @@
                 html = '<form id="voteForm">';
                 data.answers.forEach((answer, index) => {
                     html += `
-                        <div class="vote-option-individual">
-                            <label>
-                                <input type="radio" name="vote" value="${answer.playerId}">
-                                ${answer.answer}
+                        <div style="margin-bottom:12px; text-align:left; border:1px solid #ccc; padding:8px; border-radius:8px;">
+                            <label style="display:block; cursor:pointer;">
+                                <input type="radio" name="vote" value="${answer.playerId}" style="margin-right:8px;">
+                                <strong>${answer.name}:</strong> ${answer.answer}
                             </label>
                         </div>
                     `;
                 });
-                html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
+                html += '<button type="button" onclick="submitIndividualVote()" style="margin-top:16px; padding:10px 20px;">Submit Vote</button></form>';
             }
             document.getElementById('voteOptions').innerHTML = html;
         });
@@ -443,14 +444,14 @@
                 if (isLeader) {
                     waitingHeader.textContent = 'You are the leader.';
                     waitingRuleText.innerHTML =
-                        'When at least <strong>2 players</strong> have joined, ' +
+                        'When at least <strong>3 players</strong> have joined, ' +
                         'the host will start the game.';
 
                     leaderBtn.style.display = 'none';
                 } else {
                     waitingHeader.textContent = `Waiting for the host to start the game...`;
                     waitingRuleText.innerHTML =
-                        'When at least <strong>2 players</strong> have joined, ' +
+                        'When at least <strong>3 players</strong> have joined, ' +
                         'the host will start the game.';
 
                     leaderBtn.style.display = 'none';

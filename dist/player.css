@@ -1,0 +1,325 @@
+/* Player Page Styles with Dark Mode Only */
+
+/* CSS Custom Properties - Dark Mode Only */
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --accent: #5dade2;
+  --accent-hover: #3498db;
+  --border: #404040;
+  --card-bg: #2d2d2d;
+  --shadow: rgba(0, 0, 0, 0.3);
+  --success: #58d68d;
+  --warning: #f7dc6f;
+  --danger: #ec7063;
+  --info: #5dade2;
+}
+
+/* Reset and Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  padding: 10px;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Typography */
+h1, h2, h3 {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+  background: linear-gradient(45deg, var(--accent), var(--accent-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+h2 {
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.3rem;
+  font-weight: 500;
+}
+
+/* Form Elements */
+input, button {
+  font-family: inherit;
+  font-size: 1rem;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 8px 0;
+  transition: all 0.3s ease;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  width: 100%;
+}
+
+input:focus, button:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+button {
+  background: linear-gradient(45deg, var(--accent), var(--accent-hover));
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: none;
+  box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+}
+
+button:hover:not(:active) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+}
+
+button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
+}
+
+/* Layout Containers */
+#joinScreen, #waitingRoom, #answerScreen, #votingScreen, #resultsScreen {
+  max-width: 400px;
+  margin: 2rem auto;
+  background: var(--card-bg);
+  padding: 2rem;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px var(--shadow);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+}
+
+#gameArea {
+  display: none;
+}
+
+/* Join Screen */
+#joinError {
+  color: var(--danger);
+  text-align: center;
+  margin-top: 1rem;
+  font-weight: 500;
+}
+
+/* Waiting Room */
+#waitingHeader {
+  margin-bottom: 1rem;
+}
+
+#waitingRuleText {
+  background: var(--bg-secondary);
+  padding: 1rem;
+  border-radius: 8px;
+  border-left: 4px solid var(--accent);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+#playerCount {
+  text-align: center;
+  font-weight: 600;
+  margin: 1rem 0;
+}
+
+/* Answer Screen */
+.prompt {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 2rem 0;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 2px solid var(--accent);
+  text-align: center;
+}
+
+#answerInput {
+  margin-bottom: 1rem;
+}
+
+#answerStatus {
+  text-align: center;
+  margin-top: 1rem;
+  font-weight: 500;
+  color: var(--success);
+}
+
+/* Voting Screen */
+#votingQuestion {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1rem 0 1.5rem 0;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.vote-option {
+  padding: 1rem;
+  margin: 0.5rem 0;
+  border: 3px solid var(--accent);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: var(--card-bg);
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 4px 15px var(--shadow);
+}
+
+.vote-option:hover:not(:active) {
+  background: linear-gradient(45deg, var(--accent), var(--accent-hover));
+  color: white;
+  transform: scale(1.02);
+  box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+}
+
+.vote-option:active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
+}
+
+/* Timer Display */
+.timer-display {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.timer-bar {
+  width: 100%;
+  max-width: 250px;
+  height: 15px;
+  background: var(--border);
+  border-radius: 8px;
+  margin: 0 auto 0.5rem;
+  overflow: hidden;
+}
+
+.timer-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  border-radius: 8px;
+  transition: width 1s linear;
+  width: 100%;
+}
+
+.timer-text {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--accent);
+}
+
+/* Results Screen */
+#results p {
+  margin: 0.5rem 0;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  font-weight: 500;
+}
+
+#results p[style*="font-weight:bold"] {
+  background: linear-gradient(45deg, var(--success), #58d68d);
+  color: white;
+  font-weight: bold;
+}
+
+/* Game Over Banner */
+#playerGameOver {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 3rem;
+  font-weight: bold;
+  color: var(--accent);
+  text-shadow: 0 0 20px var(--accent);
+  animation: pulse 0.5s infinite alternate;
+  z-index: 1000;
+}
+
+@keyframes pulse {
+  from { opacity: 1; }
+  to { opacity: 0.5; }
+}
+
+/* Reconnect Banner */
+#reconnectBanner {
+  background: var(--warning);
+  color: #2c3e50;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
+  border: 2px solid #e67e22;
+}
+
+[data-theme="dark"] #reconnectBanner {
+  background: #4d3a0f;
+  color: #f7dc6f;
+  border-color: var(--warning);
+}
+
+#reconnectButton {
+  background: linear-gradient(45deg, var(--info), #3498db);
+  margin-top: 0.5rem;
+}
+
+/* Responsive Design */
+@media (max-width: 480px) {
+  body {
+    padding: 5px;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+  }
+
+  h2 {
+    font-size: 1.4rem;
+  }
+
+  #joinScreen, #waitingRoom, #answerScreen, #votingScreen, #resultsScreen {
+    padding: 1rem;
+    margin: 1rem auto;
+  }
+
+  .prompt {
+    font-size: 1.3rem;
+    margin: 1rem 0;
+  }
+
+  .vote-option {
+    font-size: 1rem;
+    padding: 0.75rem;
+  }
+
+  #playerGameOver {
+    font-size: 2rem;
+  }
+}
