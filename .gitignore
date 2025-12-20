@@ -150,13 +150,7 @@ build/
 # Socket.io logs or temp files
 socket.io/
 
-# Devenv
-.devenv*
-devenv.local.nix
-devenv.local.yaml
 
-# direnv
-.direnv
 
 # pre-commit
 .pre-commit-config.yaml
