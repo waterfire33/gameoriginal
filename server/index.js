@@ -54,7 +54,10 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
   // Host creates a new game (host does not play)
-  socket.on('create-game', ({ playerName, gameName }) => {
+  socket.on('create-game', ({ playerName, gameName, maxRounds, votingMode }) => {
+    const settings = {};
+    if (maxRounds) settings.maxRounds = maxRounds;
+    if (votingMode) settings.votingMode = votingMode;
     const roomCode = gameManager.createGame(gameName, socket.id, playerName, settings, (event, data) => io.to(roomCode).emit(event, data));
 
     socket.join(roomCode);
@@ -112,8 +115,8 @@ io.on('connection', (socket) => {
 
     // If all answers are in, start voting
     if (game.allAnswersSubmitted()) {
-      const pairs = game.createAnswerPairs();
-      io.to(roomCode).emit('start-voting', { pairs });
+      const votingData = game.startVotingPhase();
+      io.to(roomCode).emit('start-voting', votingData);
     }
   });
 
@@ -131,22 +134,29 @@ io.on('connection', (socket) => {
 
     // If all votes are in, calculate results
     if (game.allVotesSubmitted()) {
-      const results = game.calculateResults();
-      io.to(roomCode).emit('show-results', { results });
+      let results;
+      if (game.state === 'tiebreaker') {
+        results = game.calculateTiebreakerResults();
+      } else {
+        results = game.calculateResults();
+      }
+      if (results) {
+        io.to(roomCode).emit('show-results', { results });
 
-      // After 5 seconds, start intermission/next round
-      setTimeout(() => {
-        if (game.startNextRound()) {
-          io.to(roomCode).emit('intermission', {
-            round: game.round,
-            maxRounds: game.settings.maxRounds,
-          });
-        } else {
-          io.to(roomCode).emit('game-over', {
-            finalScores: game.getFinalScores(),
-          });
-        }
-      }, 5000);
+        // After 5 seconds, start intermission/next round
+        setTimeout(() => {
+          if (game.startNextRound()) {
+            io.to(roomCode).emit('intermission', {
+              round: game.round,
+              maxRounds: game.settings.maxRounds,
+            });
+          } else {
+            io.to(roomCode).emit('game-over', {
+              finalScores: game.getFinalScores(),
+            });
+          }
+        }, 5000);
+      }
     }
   });
 
@@ -161,9 +171,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Require at least 3 players (not counting host)
-    if (game.players.length < 3) {
-      socket.emit('error', { message: 'At least 3 players are required to start the game.' });
+    // Require at least 2 players (not counting host)
+    if (game.players.length < 2) {
+      socket.emit('error', { message: 'At least 2 players are required to start the game.' });
       return;
     }
 

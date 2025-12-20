@@ -13,6 +13,12 @@
     <div id="createGame">
         <input type="text" id="gameName" placeholder="Game Name">
         <input type="text" id="hostName" placeholder="Your Name">
+        <input type="number" id="maxRounds" placeholder="Number of rounds" value="3" min="1" max="10">
+        <label for="votingMode">Voting Mode:</label>
+        <select id="votingMode">
+            <option value="individual">Individual Winners</option>
+            <option value="pairs">Pairs (VS)</option>
+        </select>
         <button onclick="createGame()">Create Game</button>
     </div>
 
@@ -50,11 +56,11 @@
         let timerInterval = null;
 
         socket.on('connect', () => {
-            console.log('Socket connected');
+            // Socket connected
         });
 
         socket.on('disconnect', () => {
-            console.log('Socket disconnected');
+            // Socket disconnected
         });
 
         // Timer handling
@@ -90,17 +96,19 @@
         function createGame() {
             const gameName = document.getElementById('gameName').value;
             const playerName = document.getElementById('hostName').value;
+            const maxRounds = parseInt(document.getElementById('maxRounds').value);
+            const votingMode = document.getElementById('votingMode').value;
 
             if (!gameName || !playerName) {
                 alert('Please enter both game name and your name');
                 return;
             }
 
-            socket.emit('create-game', { playerName, gameName });
+            socket.emit('create-game', { playerName, gameName, maxRounds, votingMode });
         }
 
         function hostStartGame() {
-            console.log('Host start game clicked, roomCode:', roomCode, 'socket connected:', socket.connected);
+            // Host start game clicked
             if (!roomCode) {
                 alert('Game not created yet');
                 return;
@@ -109,7 +117,7 @@
         }
 
         function updateGameState(state) {
-            console.log('Updating game state:', state);
+            // Updating game state
             if (state.players) {
                 let html = '';
                 state.players.forEach(player => {
@@ -125,9 +133,9 @@
 
                 // Enable/disable start button based on players
                 const startBtn = document.getElementById('hostStartBtn');
-                startBtn.disabled = state.players.length < 3;
-                startBtn.textContent = state.players.length < 3 ?
-                    `Need ${3 - state.players.length} more player(s)` :
+                startBtn.disabled = state.players.length < 2;
+                startBtn.textContent = state.players.length < 2 ?
+                    `Need ${2 - state.players.length} more player(s)` :
                     'Start Game';
             }
 
@@ -173,7 +181,7 @@
                 correctLevel: QRCode.CorrectLevel.H
             });
 
-            console.log('Game created, roomCode:', roomCode, 'joinUrl:', joinUrl);
+            // Game created
             updateGameState(data.gameState);
         });
 
@@ -196,7 +204,7 @@
 
         // Start of answering phase after intermission
         socket.on('start-answering', (data) => {
-            console.log('Received start-answering event:', data);
+            // Received start-answering event
             document.getElementById('gameState').innerHTML = '';
             updateGameState(data);
         });
@@ -280,6 +288,13 @@
                     </div>`;
                 });
                 document.getElementById('playerList').innerHTML = html;
+
+                // Enable/disable start button based on players
+                const startBtn = document.getElementById('hostStartBtn');
+                startBtn.disabled = state.players.length < 2;
+                startBtn.textContent = state.players.length < 2 ?
+                    `Need ${2 - state.players.length} more player(s)` :
+                    'Start Game';
             }
 
             // Always update total rounds when provided, even if round is 0

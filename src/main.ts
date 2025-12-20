@@ -315,17 +315,7 @@ async function startGame() {
   }
 }
 
-function generateExample(word: string, level: string): string {
-  // Generate a simple example sentence based on level
-  const examples: { [key: string]: string } = {
-    'A1': `I see a ${word}.`,
-    'A2': `I bought a ${word} yesterday.`,
-    'B1': `I think ${word} is good for health.`,
-    'B2': `The ${word} provides many benefits.`,
-    'C1': `The analysis of ${word} reveals significant insights.`
-  };
-  return examples[level] || `I like ${word}.`;
-}
+
 
 function processDefinition(level: string, def: string, word: string): string {
   const rules = CEFR_LEVELS[level as keyof typeof CEFR_LEVELS].definition_rules;

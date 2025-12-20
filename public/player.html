@@ -26,7 +26,7 @@
             <h3 id="waitingHeader">Waiting for the leader to start the game...</h3>
             <p id="waitingRuleText">
                 The <strong>first player</strong> to join is the leader.
-                When at least <strong>3 players</strong> have joined, the leader
+                When at least <strong>2 players</strong> have joined, the leader
                 will see a <strong>"Start Game"</strong> button below.
             </p>
             <div id="playerCount"></div>
@@ -218,30 +218,48 @@
             document.getElementById('answerScreen').style.display = 'none';
             document.getElementById('votingScreen').style.display = 'block';
 
-            // Show the question for this voting round between the heading and the buttons
-            if (data.pairs && data.pairs.length > 0) {
-                document.getElementById('votingQuestion').textContent = data.pairs[0].promptText;
-            } else {
-                document.getElementById('votingQuestion').textContent = '';
-            }
-
-            // Render only the answer buttons (question is in its own line above)
             let html = '';
-            data.pairs.forEach((pair) => {
-                html += `
-                    <div style="margin-bottom:16px; text-align:center;">
-                        <div style="display:flex; align-items:center; justify-content:center; gap:12px;">
-                            <button class="vote-option" onclick="vote('${pair.id}')">
-                                <strong>${pair.player1.answer}</strong>
-                            </button>
-                            <span>VS</span>
-                            <button class="vote-option" onclick="vote('${pair.id}')">
-                                <strong>${pair.player2.answer}</strong>
-                            </button>
+            if (data.mode === 'pairs') {
+                // Show the question for this voting round between the heading and the buttons
+                if (data.pairs && data.pairs.length > 0) {
+                    document.getElementById('votingQuestion').textContent = data.pairs[0].promptText;
+                } else {
+                    document.getElementById('votingQuestion').textContent = '';
+                }
+
+                // Render pairs with individual voting
+                html = '';
+                data.pairs.forEach((pair) => {
+                    html += `
+                        <div style="margin-bottom:16px; text-align:center;">
+                            <div style="display:flex; align-items:center; justify-content:center; gap:12px;">
+                                <button class="vote-option" onclick="vote('${pair.player1.id}')">
+                                    <strong>${pair.player1.answer}</strong>
+                                </button>
+                                <span>VS</span>
+                                <button class="vote-option" onclick="vote('${pair.player2.id}')">
+                                    <strong>${pair.player2.answer}</strong>
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                `;
-            });
+                    `;
+                });
+            } else if (data.mode === 'individual') {
+                document.getElementById('votingQuestion').textContent = 'Vote for the funniest answer!';
+                // Render all answers as radio buttons
+                html = '<form id="voteForm">';
+                data.answers.forEach((answer, index) => {
+                    html += `
+                        <div class="vote-option-individual">
+                            <label>
+                                <input type="radio" name="vote" value="${answer.playerId}">
+                                ${answer.answer}
+                            </label>
+                        </div>
+                    `;
+                });
+                html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
+            }
             document.getElementById('voteOptions').innerHTML = html;
         });
 
@@ -249,6 +267,30 @@
             socket.emit('submit-vote', { roomCode, playerId, voteId });
             document.getElementById('voteOptions').innerHTML =
                 '<p>Vote submitted! Waiting for others...</p>';
+        }
+
+        function submitIndividualVote() {
+            const selected = document.querySelector('input[name="vote"]:checked');
+            if (!selected) {
+                alert('Please select an answer to vote for.');
+                return;
+            }
+            const voteId = selected.value;
+            socket.emit('submit-vote', { roomCode, playerId, voteId });
+            document.getElementById('voteOptions').innerHTML =
+                '<p>Vote submitted! Waiting for others...</p>';
+        }
+
+        function submitTiebreakerVote() {
+            const selected = document.querySelector('input[name="tiebreakerVote"]:checked');
+            if (!selected) {
+                alert('Please select an answer to vote for in the tiebreaker.');
+                return;
+            }
+            const voteId = selected.value;
+            socket.emit('submit-vote', { roomCode, playerId, voteId });
+            document.getElementById('voteOptions').innerHTML =
+                '<p>Tiebreaker vote submitted! Waiting for others...</p>';
         }
 
         function attemptReconnect() {
@@ -283,11 +325,47 @@
             socket.emit('start-game', { roomCode });
         }
 
+        socket.on('tiebreaker-voting', (data) => {
+            document.getElementById('resultsScreen').style.display = 'none';
+            document.getElementById('votingScreen').style.display = 'block';
+
+            document.getElementById('votingQuestion').textContent = 'Tiebreaker! Vote for the funniest among the tied answers!';
+
+            let html = '<form id="tiebreakerForm">';
+            const canVote = data.allowedVoters.includes(playerId);
+            if (!canVote) {
+                html += '<p style="color: red;">You are not in the tiebreaker. Please wait...</p>';
+            }
+            data.tiedAnswers.forEach((answer, index) => {
+                html += `
+                    <div style="margin-bottom:12px; text-align:left; border:1px solid #ccc; padding:8px; border-radius:8px;">
+                        <label style="display:block; cursor:${canVote ? 'pointer' : 'not-allowed'};">
+                            <input type="radio" name="tiebreakerVote" value="${answer.playerId}" ${canVote ? '' : 'disabled'} style="margin-right:8px;">
+                            <strong>${answer.name}:</strong> ${answer.answer} (had ${answer.previousVotes} votes)
+                        </label>
+                    </div>
+                `;
+            });
+            if (canVote) {
+                html += '<button type="button" onclick="submitTiebreakerVote()" style="margin-top:16px; padding:10px 20px;">Submit Tiebreaker Vote</button>';
+            }
+            html += '</form>';
+            document.getElementById('voteOptions').innerHTML = html;
+        });
+
         socket.on('show-results', (data) => {
             document.getElementById('votingScreen').style.display = 'none';
             document.getElementById('resultsScreen').style.display = 'block';
 
             let html = '';
+            if (data.results.wasTiebreaker) {
+                html += '<h4>Tiebreaker Results:</h4>';
+                data.results.answers.forEach((ans) => {
+                    html += `<p><strong>${ans.name}:</strong> "${ans.answer}" - ${ans.votes} tiebreaker votes ${ans.isWinner ? '(Winner!)' : ''}</p>`;
+                });
+                html += '<br>';
+            }
+            html += '<h4>Scores:</h4>';
             data.results.scores.forEach((score) => {
                 const isYou = score.id === playerId;
                 html += `<p${isYou ? ' style=\"font-weight:bold;\"' : ''}>
@@ -366,14 +444,14 @@
                 if (isLeader) {
                     waitingHeader.textContent = 'You are the leader.';
                     waitingRuleText.innerHTML =
-                        'When at least <strong>3 players</strong> have joined, ' +
+                        'When at least <strong>2 players</strong> have joined, ' +
                         'the host will start the game.';
 
                     leaderBtn.style.display = 'none';
                 } else {
                     waitingHeader.textContent = `Waiting for the host to start the game...`;
                     waitingRuleText.innerHTML =
-                        'When at least <strong>3 players</strong> have joined, ' +
+                        'When at least <strong>2 players</strong> have joined, ' +
                         'the host will start the game.';
 
                     leaderBtn.style.display = 'none';

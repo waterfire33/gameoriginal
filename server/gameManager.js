@@ -86,6 +86,7 @@ class Game {
       voteTime: settings.voteTime || 30,    // seconds
       intermissionTime: settings.intermissionTime || 10, // seconds
       gameMode: settings.gameMode || 'classic', // classic, speed, creative
+      votingMode: settings.votingMode || 'individual', // individual, pairs
       ...settings
     };
 
@@ -228,16 +229,49 @@ class Game {
     return prompts;
   }
 
-  submitAnswer(playerId, promptId, answer) {
-    this.answers.set(playerId, { promptId, answer, timestamp: Date.now() });
+   submitAnswer(playerId, promptId, answer) {
+     this.answers.set(playerId, { promptId, answer, timestamp: Date.now() });
 
-    if (this.allAnswersSubmitted()) {
-      this.clearTimer('answer');
-    }
-  }
+     if (this.allAnswersSubmitted()) {
+       this.clearTimer('answer');
+       this.startVotingPhase();
+     }
+   }
 
   allAnswersSubmitted() {
     return this.answers.size === this.players.length;
+  }
+
+  startVotingPhase() {
+    if (this.settings.votingMode === 'pairs') {
+      const pairs = this.createAnswerPairs();
+      return { mode: 'pairs', pairs };
+    } else {
+      const answers = this.createIndividualVoting();
+      return { mode: 'individual', answers };
+    }
+  }
+
+  createIndividualVoting() {
+    // Collect all answers and shuffle for fair display
+    const allAnswers = Array.from(this.answers.entries()).map(([playerId, answerData]) => ({
+      playerId,
+      name: this.getPlayer(playerId).name,
+      answer: answerData.answer,
+      promptText: this.prompts.find(p => p.id === answerData.promptId)?.text || '',
+    }));
+
+    // Shuffle answers
+    for (let i = allAnswers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allAnswers[i], allAnswers[j]] = [allAnswers[j], allAnswers[i]];
+    }
+
+    this.votingAnswers = allAnswers;
+    this.state = 'voting';
+    this.startTimer('vote', this.settings.voteTime);
+
+    return allAnswers;
   }
 
   createAnswerPairs() {
@@ -281,42 +315,167 @@ class Game {
   }
 
   submitVote(playerId, voteId) {
+    // Check if player is allowed to vote in tiebreaker
+    if (this.state === 'tiebreaker' && !this.tiebreakerPlayers.includes(playerId)) {
+      return; // Ignore vote from non-tied player
+    }
+
     this.votes.set(playerId, voteId);
 
     if (this.allVotesSubmitted()) {
-      this.clearTimer('vote');
+      if (this.state === 'tiebreaker') {
+        this.clearTimer('tiebreaker');
+      } else {
+        this.clearTimer('vote');
+      }
     }
   }
 
   allVotesSubmitted() {
+    if (this.state === 'tiebreaker') {
+      return this.votes.size === this.tiebreakerPlayers.length;
+    }
     return this.votes.size === this.players.length;
   }
 
   calculateResults() {
     const voteCounts = new Map();
 
-    // Count votes
+    // Count votes (voteId is now playerId)
     this.votes.forEach((voteId) => {
       voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
     });
 
-    // Update scores
-    this.votingPairs.forEach((pair) => {
-      const votes = voteCounts.get(pair.id) || 0;
-      const player1 = this.getPlayer(pair.player1.id);
-      const player2 = this.getPlayer(pair.player2.id);
+    // Find the maximum vote count
+    let maxVotes = 0;
+    voteCounts.forEach((count) => {
+      if (count > maxVotes) maxVotes = count;
+    });
 
-      if (player1) player1.score += votes;
-      if (player2) player2.score += votes;
+    // Find all players with max votes (potential winners)
+    const winners = [];
+    voteCounts.forEach((count, playerId) => {
+      if (count === maxVotes) winners.push(playerId);
+    });
+
+    if (winners.length === 1) {
+      // Single winner
+      const winner = this.getPlayer(winners[0]);
+      if (winner) winner.score += maxVotes;
+
+      this.state = 'results';
+      return this.buildResultsData(voteCounts);
+    } else {
+      // Tie - start tiebreaker
+      this.startTiebreaker(winners, voteCounts);
+      return null; // Don't emit results yet
+    }
+  }
+
+  buildResultsData(voteCounts) {
+    // Build results based on voting mode
+    let answers = [];
+    if (this.settings.votingMode === 'pairs') {
+      answers = this.votingPairs.flatMap(pair => [
+        { playerId: pair.player1.id, name: pair.player1.name, answer: pair.player1.answer, votes: voteCounts.get(pair.player1.id) || 0 },
+        { playerId: pair.player2.id, name: pair.player2.name, answer: pair.player2.answer, votes: voteCounts.get(pair.player2.id) || 0 }
+      ]);
+    } else {
+      answers = this.votingAnswers.map(ans => ({
+        ...ans,
+        votes: voteCounts.get(ans.playerId) || 0
+      }));
+    }
+
+    return {
+      answers,
+      scores: this.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
+      votingMode: this.settings.votingMode
+    };
+  }
+
+  startTiebreaker(tiedPlayerIds, previousVoteCounts) {
+    // Collect tied answers
+    const tiedAnswers = [];
+    tiedPlayerIds.forEach(playerId => {
+      const player = this.getPlayer(playerId);
+      const answerData = this.answers.get(playerId);
+      if (player && answerData) {
+        tiedAnswers.push({
+          playerId,
+          name: player.name,
+          answer: answerData.answer,
+          previousVotes: previousVoteCounts.get(playerId) || 0
+        });
+      }
+    });
+
+    // Shuffle tied answers
+    for (let i = tiedAnswers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [tiedAnswers[i], tiedAnswers[j]] = [tiedAnswers[j], tiedAnswers[i]];
+    }
+
+    this.tiebreakerAnswers = tiedAnswers;
+    this.tiebreakerPlayers = tiedPlayerIds;
+    this.state = 'tiebreaker';
+
+    // Clear previous votes and start new voting
+    this.votes.clear();
+    this.startTimer('tiebreaker', this.settings.voteTime);
+
+    // Emit tiebreaker voting to all players
+    if (this.emit) {
+      this.emit('tiebreaker-voting', {
+        tiedAnswers,
+        allowedVoters: tiedPlayerIds
+      });
+    }
+  }
+
+  calculateTiebreakerResults() {
+    const voteCounts = new Map();
+
+    // Count tiebreaker votes
+    this.votes.forEach((voteId) => {
+      voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
+    });
+
+    // Find max votes in tiebreaker
+    let maxVotes = 0;
+    voteCounts.forEach((count) => {
+      if (count > maxVotes) maxVotes = count;
+    });
+
+    // Find winners (may still have ties, but split points)
+    const winners = [];
+    voteCounts.forEach((count, playerId) => {
+      if (count === maxVotes) winners.push(playerId);
+    });
+
+    // Award points (split if still tied)
+    const pointsPerWinner = Math.floor(maxVotes / winners.length);
+    winners.forEach(playerId => {
+      const player = this.getPlayer(playerId);
+      if (player) player.score += pointsPerWinner;
     });
 
     this.state = 'results';
+    return this.buildTiebreakerResultsData(voteCounts, winners);
+  }
+
+  buildTiebreakerResultsData(voteCounts, winners) {
+    const answers = this.tiebreakerAnswers.map(ans => ({
+      ...ans,
+      votes: voteCounts.get(ans.playerId) || 0,
+      isWinner: winners.includes(ans.playerId)
+    }));
+
     return {
-      pairs: this.votingPairs.map((pair) => ({
-        ...pair,
-        votes: voteCounts.get(pair.id) || 0,
-      })),
+      answers,
       scores: this.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
+      votingMode: this.settings.votingMode,
+      wasTiebreaker: true
     };
   }
 
