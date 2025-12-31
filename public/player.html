@@ -39,7 +39,7 @@
                 </div>
                 <div class="timer-text" id="timerText">60</div>
             </div>
-            <div class="prompt" id="currentPrompt"></div>
+            <div class="prompt" id="currentPrompt" style="text-align: center; font-size: 1.3em; margin: 20px 0;"></div>
             <input type="text" id="answerInput" placeholder="Your funny answer...">
             <button onclick="submitAnswer()">Submit Answer</button>
             <p id="answerStatus"></p>
@@ -193,7 +193,7 @@
             const playerPrompt = data.prompts.find((p) => p.playerId === playerId);
             if (playerPrompt) {
                 currentPrompt = playerPrompt;
-                document.getElementById('currentPrompt').textContent = playerPrompt.text;
+                document.getElementById('currentPrompt').innerHTML = `<strong>Question:</strong> ${playerPrompt.text}`;
             }
         });
 
@@ -256,6 +256,30 @@
                             </label>
                         </div>
                     `;
+                });
+                html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
+            } else if (data.mode === 'thriples') {
+                // Show the question
+                if (data.thriples && data.thriples.length > 0) {
+                    document.getElementById('votingQuestion').textContent = data.thriples[0].promptText;
+                } else {
+                    document.getElementById('votingQuestion').textContent = '';
+                }
+                // Render thriples with radio buttons
+                html = '<form id="voteForm">';
+                data.thriples.forEach((triple) => {
+                    html += `<div style="margin-bottom:16px;">`;
+                    triple.answers.forEach((answer, idx) => {
+                        html += `
+                            <div class="vote-option-individual">
+                                <label>
+                                    <input type="radio" name="vote" value="${answer.id}">
+                                    ${idx + 1}. ${answer.answer}
+                                </label>
+                            </div>
+                        `;
+                    });
+                    html += `</div>`;
                 });
                 html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
             }
@@ -422,7 +446,7 @@
             const playerPrompt = data.prompts.find((p) => p.playerId === playerId);
             if (playerPrompt) {
                 currentPrompt = playerPrompt;
-                document.getElementById('currentPrompt').textContent = playerPrompt.text;
+                document.getElementById('currentPrompt').innerHTML = `<strong>Question:</strong> ${playerPrompt.text}`;
             }
         });
 
