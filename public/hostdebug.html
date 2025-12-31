@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Game Host - Multiplayer Party Game</title>
-    <meta name="description" content="Host a multiplayer party game. Create rooms and manage players for fun voting games.">
+    <title>Game Host Debug - Multiplayer Party Game</title>
+    <meta name="description" content="Host a multiplayer party game with bots. Create rooms and manage players for fun voting games.">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
     <link rel="stylesheet" href="host.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
-    <h1>Game Host</h1>
+    <h1>Game Host (Debug Mode)</h1>
 
     <div id="createGame">
         <input type="text" id="gameName" placeholder="Game Name">
@@ -40,6 +40,8 @@
         </div>
 
         <button id="hostStartBtn" onclick="hostStartGame()" style="margin: 1rem 0;">Start Game</button>
+        <button onclick="addBot()" style="margin: 0 0.5rem;">Add Bot</button>
+        <button onclick="removeBot()" style="margin: 0 0.5rem;">Remove Bot</button>
 
         <div class="player-list" id="playerList"></div>
     </div>
@@ -114,10 +116,11 @@
                 return;
             }
 
-            socket.emit('create-game', { playerName, gameName, maxRounds, votingMode, cefrLevel });
+            socket.emit('create-game', { playerName, gameName, maxRounds, votingMode, cefrLevel, debug: true });
         }
 
         function hostStartGame() {
+            console.log('Attempting to start game, roomCode:', roomCode);
             // Host start game clicked
             if (!roomCode) {
                 alert('Game not created yet');
@@ -126,26 +129,44 @@
             socket.emit('start-game', { roomCode });
         }
 
+        function addBot() {
+            if (!roomCode) {
+                alert('Game not created yet');
+                return;
+            }
+            socket.emit('add-bot', { roomCode });
+        }
+
+        function removeBot() {
+            if (!roomCode) {
+                alert('Game not created yet');
+                return;
+            }
+            socket.emit('remove-bot', { roomCode });
+        }
+
         function updateGameState(state) {
+            console.log('updateGameState called, players:', state.players.length, state.players.map(p => ({ name: p.name, isBot: p.isBot })));
             // Updating game state
             if (state.players) {
                 let html = '';
                 state.players.forEach(player => {
                     const status = player.isConnected ? 'online' : 'offline';
                     const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
+                    const botIndicator = player.isBot ? ' [BOT]' : '';
                     html += `<div class="player">
-                        ${player.name} (${player.score} pts)
+                        ${player.name}${botIndicator} (${player.score} pts)
                         ${player.isLeader ? ' - LEADER' : ''}<br>
                         <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
                     </div>`;
                 });
                 document.getElementById('playerList').innerHTML = html;
 
-                // Enable/disable start button based on players
+                // Enable/disable start button based on players (debug mode allows 1+)
                 const startBtn = document.getElementById('hostStartBtn');
-                startBtn.disabled = state.players.length < 2;
-                startBtn.textContent = state.players.length < 2 ?
-                    `Need ${2 - state.players.length} more player(s)` :
+                startBtn.disabled = state.players.length < 1;
+                startBtn.textContent = state.players.length < 1 ?
+                    'Need 1 more player' :
                     'Start Game';
             }
 
@@ -159,6 +180,7 @@
         }
 
         socket.on('game-created', (data) => {
+            console.log('Game created, roomCode:', data.roomCode, 'players:', data.gameState.players.length);
             roomCode = data.roomCode;
 
             // Reset any previous GAME OVER state
@@ -199,6 +221,15 @@
             updateGameState(data.gameState);
         });
 
+        socket.on('bot-added', (data) => {
+            console.log('Bot added, players now:', data.gameState.players.length);
+            updateGameState(data.gameState);
+        });
+
+        socket.on('bot-removed', (data) => {
+            updateGameState(data.gameState);
+        });
+
         socket.on('error', (data) => {
             alert('Error: ' + data.message);
         });
@@ -220,6 +251,7 @@
         });
 
         socket.on('game-started', (data) => {
+            console.log('Game started successfully');
             document.getElementById('gameLobby').style.display = 'none';
             document.getElementById('gameArea').style.display = 'block';
             updateGameState(data);
@@ -295,37 +327,6 @@
             document.getElementById('gameArea').style.display = 'block';
             updateGameState(data);
         });
-
-        function updateGameState(state) {
-            if (state.players) {
-                let html = '';
-                state.players.forEach(player => {
-                    const status = player.isConnected ? 'online' : 'offline';
-                    const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
-                    html += `<div class="player">
-                        ${player.name} (${player.score} pts)
-                        ${player.isLeader ? ' - LEADER' : ''}<br>
-                        <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
-                    </div>`;
-                });
-                document.getElementById('playerList').innerHTML = html;
-
-                // Enable/disable start button based on players
-                const startBtn = document.getElementById('hostStartBtn');
-                startBtn.disabled = state.players.length < 2;
-                startBtn.textContent = state.players.length < 2 ?
-                    `Need ${2 - state.players.length} more player(s)` :
-                    'Start Game';
-            }
-
-            // Always update total rounds when provided, even if round is 0
-            if (typeof state.maxRounds !== 'undefined') {
-                document.getElementById('totalRounds').textContent = state.maxRounds;
-            }
-            if (typeof state.round !== 'undefined') {
-                document.getElementById('currentRound').textContent = state.round;
-            }
-        }
     </script>
 </body>
 </html>

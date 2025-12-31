@@ -38,6 +38,11 @@ const gameManager = new GameManager();
 app.use(express.static('../public'));
 app.use(express.json());
 
+// Serve hostdebug.html
+app.get('/hostdebug.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/hostdebug.html'));
+});
+
 // Redirect root to player.html for easier access
 app.get('/', (req, res) => {
   res.redirect('/player.html');
@@ -54,19 +59,23 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
   // Host creates a new game (host does not play)
-  socket.on('create-game', ({ playerName, gameName, maxRounds, votingMode }) => {
+  socket.on('create-game', ({ playerName, gameName, maxRounds, votingMode, cefrLevel, debug = false }) => {
     const settings = {};
     if (maxRounds) settings.maxRounds = maxRounds;
     if (votingMode) settings.votingMode = votingMode;
-    const roomCode = gameManager.createGame(gameName, socket.id, playerName, settings, (event, data) => io.to(roomCode).emit(event, data));
+    if (cefrLevel) settings.cefrLevel = cefrLevel;
+    const roomCode = gameManager.createGame(gameName, socket.id, playerName, settings, (event, data) => io.to(roomCode).emit(event, data), debug);
 
     socket.join(roomCode);
+    const lanIps = getLanIPv4Addresses();
+    const joinUrl = lanIps.length > 0 ? `http://${lanIps[0]}:${PORT}/player.html?room=${roomCode}` : `http://localhost:${PORT}/player.html?room=${roomCode}`;
     socket.emit('game-created', {
       roomCode,
+      joinUrl,
       gameState: gameManager.getGame(roomCode).getState(),
     });
 
-    console.log(`Game created: ${roomCode} by host ${playerName}`);
+    console.log(`Game created: ${roomCode} by host ${playerName} (debug: ${debug})`);
   });
 
   // Player joins existing game
@@ -160,6 +169,50 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Add bot to game
+  socket.on('add-bot', ({ roomCode }) => {
+    const game = gameManager.getGame(roomCode);
+    if (!game) return;
+
+    // Only host can add bots
+    if (socket.id !== game.hostSocketId) {
+      socket.emit('error', { message: 'Only the host can add bots.' });
+      return;
+    }
+
+    console.log('Adding bot to room', roomCode, 'current players:', game.players.length);
+    const bot = game.addBot();
+    if (!bot) {
+      socket.emit('error', { message: 'Cannot add more bots.' });
+      return;
+    }
+
+    // Notify everyone in the room
+    io.to(roomCode).emit('bot-added', {
+      bot,
+      gameState: game.getState(),
+    });
+  });
+
+  // Remove bot from game
+  socket.on('remove-bot', ({ roomCode }) => {
+    const game = gameManager.getGame(roomCode);
+    if (!game) return;
+
+    // Only host can remove bots
+    if (socket.id !== game.hostSocketId) {
+      socket.emit('error', { message: 'Only the host can remove bots.' });
+      return;
+    }
+
+    game.removeBot();
+
+    // Notify everyone in the room
+    io.to(roomCode).emit('bot-removed', {
+      gameState: game.getState(),
+    });
+  });
+
   // Host starts the game once enough players have joined
   socket.on('start-game', async ({ roomCode }) => {
     const game = gameManager.getGame(roomCode);
@@ -171,9 +224,10 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Require at least 2 players (not counting host)
-    if (game.players.length < 2) {
-      socket.emit('error', { message: 'At least 2 players are required to start the game.' });
+    console.log('Start game requested for', roomCode, 'players:', game.players.length, 'debug:', game.debugMode);
+    // Require at least 2 players (not counting host), or 1 in debug mode
+    if (game.players.length < (game.debugMode ? 1 : 2)) {
+      socket.emit('error', { message: `At least ${game.debugMode ? 1 : 2} player(s) are required to start the game.` });
       return;
     }
 
