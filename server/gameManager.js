@@ -149,6 +149,7 @@ class Game {
 
   async startGame() {
     await this.loadPromptsFromAIIfNeeded();
+    this.round = 1;
     this.startAnsweringPhase();
   }
 

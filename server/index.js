@@ -201,6 +201,11 @@ io.on('connection', (socket) => {
 
     try {
       await game.startGame();
+      io.to(roomCode).emit('game-started', {
+        round: game.round,
+        maxRounds: game.settings.maxRounds,
+        prompts: game.getCurrentPrompts(),
+      });
     } catch (err) {
       console.error('Failed to start game with AI-generated prompts:', err);
       socket.emit('error', { message: 'Failed to start game. Please try again.' });
