@@ -104,7 +104,7 @@ class Game {
     this.prompts = [];
     this.currentPrompts = [];
     this.answers = new Map(); // playerId -> Map(promptId -> { promptId, answer, timestamp })
-    this.votes = new Map(); // playerId -> voteId
+    this.votes = new Map(); // playerId -> voteId (or array of voteIds for R3)
     this.votingMatches = [];
     this.currentMatchIndex = 0;
 
@@ -157,6 +157,7 @@ class Game {
     if (this.prompts && this.prompts.length > 0) return;
 
     try {
+      // Increased to 50 to support N prompts per round logic
       const aiText = await fetchPromptsFromLocalAI(this.settings.cefrLevel || 'B1');
       let parsed;
       try {
@@ -173,7 +174,7 @@ class Game {
       const validPrompts = parsed
         .map(text => String(text).trim())
         .filter(text => text.length > 0 && text.length < 100 && text.endsWith('______'))
-        .slice(0, 20);
+        .slice(0, 50);
 
       if (validPrompts.length < 5) {
         this.prompts = this.generateFallbackPrompts();
@@ -202,20 +203,62 @@ class Game {
       { id: 8, text: 'The worst job in the world: ______' },
       { id: 9, text: 'An embarrassing tattoo: ______' },
       { id: 10, text: 'The lamest excuse for being late: ______' },
+      // Added more fallbacks
+      { id: 11, text: 'Best way to scare a ghost: ______' },
+      { id: 12, text: 'Worst place to propose: ______' },
+      { id: 13, text: 'A bad name for a band: ______' },
+      { id: 14, text: 'Worst thing to say to a cop: ______' },
+      { id: 15, text: 'A weird reason to get fired: ______' }
     ];
   }
 
+  selectRandomPrompts(count) {
+    // Helper to get N random prompts
+    const shuffled = [...this.prompts].sort(() => Math.random() - 0.5);
+    if (count > shuffled.length) {
+         // Reuse if needed (basic cycling)
+         const extended = [];
+         while (extended.length < count) {
+             extended.push(...shuffled);
+         }
+         return extended.slice(0, count);
+    }
+    return shuffled.slice(0, count);
+  }
+
   assignPrompts() {
-    // Assign a single random prompt to all players (Tournament style)
-    const sharedPrompt = this.prompts[Math.floor(Math.random() * this.prompts.length)];
     const prompts = [];
-    this.players.forEach((player) => {
-      prompts.push({
-        playerId: player.id,
-        promptId: sharedPrompt.id,
-        text: sharedPrompt.text,
-      });
-    });
+    const numPlayers = this.players.length;
+
+    // Ensure we have prompts loaded (this.prompts)
+    if (!this.prompts || this.prompts.length === 0) {
+        this.prompts = this.generateFallbackPrompts();
+    }
+
+    if (this.isFinalRound()) { // Round 3: Last Lash
+        // One shared prompt for everyone
+        const promptIndex = Math.floor(Math.random() * this.prompts.length);
+        const sharedPrompt = this.prompts[promptIndex];
+        this.players.forEach(p => {
+            prompts.push({ playerId: p.id, promptId: sharedPrompt.id, text: sharedPrompt.text });
+        });
+    } else { // Round 1 & 2
+        // Circular assignment: P_i gets Prompt_i and Prompt_{i-1} (wrapping)
+        // We need N unique prompts (one per pair).
+        const selectedPrompts = this.selectRandomPrompts(numPlayers); 
+        
+        // Assign Pair i: P[i], P[i+1] -> Prompt[i]
+        for (let i = 0; i < numPlayers; i++) {
+            const p1 = this.players[i];
+            const p2 = this.players[(i + 1) % numPlayers];
+            const prompt = selectedPrompts[i];
+            
+            // Assign to p1
+            prompts.push({ playerId: p1.id, promptId: prompt.id, text: prompt.text });
+            // Assign to p2
+            prompts.push({ playerId: p2.id, promptId: prompt.id, text: prompt.text });
+        }
+    }
     return prompts;
   }
 
@@ -280,8 +323,17 @@ class Game {
   }
 
   createFinalRoundVoting() {
-    // Reuse thriples logic for final round
-    return this.createThriplesVoting();
+    // Round 3: "Battle Royale" - All answers on screen
+    const answers = this.createIndividualVoting(); // Gets all answers
+    // Shuffle them
+    for (let i = answers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [answers[i], answers[j]] = [answers[j], answers[i]];
+    }
+    // One big match, mode 'medals'
+    // Ensure promptText is available
+    const promptText = answers[0]?.promptText || 'Final Round';
+    return [{ mode: 'medals', answers, promptText }];
   }
 
   createAnswerPairs() {
@@ -337,51 +389,8 @@ class Game {
   }
 
   createThriplesVoting() {
-    const matches = [];
-    const answersArray = Array.from(this.answers.entries());
-    
-    // Group answers by promptId
-    const answersByPrompt = new Map();
-    answersArray.forEach(([playerId, answerMap]) => {
-        answerMap.forEach((answerData, promptId) => {
-            if (!answersByPrompt.has(promptId)) {
-                answersByPrompt.set(promptId, []);
-            }
-            answersByPrompt.get(promptId).push({
-                id: playerId,
-                playerId,
-                ...answerData
-            });
-        });
-    });
-
-    answersByPrompt.forEach((answers, promptId) => {
-        // Shuffle
-        for (let i = answers.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [answers[i], answers[j]] = [answers[j], answers[i]];
-        }
-
-        // Group in 3s
-        for (let i = 0; i < answers.length; i += 3) {
-            const group = answers.slice(i, i + 3);
-            if (group.length >= 2) {
-                 const prompt = this.prompts.find(p => p.id === promptId);
-                 matches.push({
-                    mode: 'thriples',
-                    promptId,
-                    promptText: prompt ? prompt.text : '',
-                    answers: group.map(a => ({
-                        id: a.playerId,
-                        name: this.getPlayer(a.playerId).name,
-                        answer: a.answer
-                    }))
-                 });
-            }
-        }
-    });
-
-    return matches.sort(() => Math.random() - 0.5);
+      // (Retained for backward compatibility if needed, but not used in new logic)
+      return this.createAnswerPairs(); // Fallback to pairs or handled elsewhere
   }
 
   createIndividualVoting() {
@@ -402,6 +411,7 @@ class Game {
   calculateTiebreakerResults() {
        const voteCounts = new Map();
         this.votes.forEach((voteId) => {
+            // Tiebreaker usually single vote
           voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
         });
 
@@ -471,14 +481,14 @@ class Game {
     
     if (this.isFinalRound()) {
       this.votingMatches = this.createFinalRoundVoting();
-    } else if (this.settings.votingMode === 'pairs') {
-      this.votingMatches = this.createAnswerPairs();
-    } else if (this.settings.votingMode === 'thriples') {
-      this.votingMatches = this.createThriplesVoting();
     } else {
-      // Individual: Treat as one big match
-      const answers = this.createIndividualVoting();
-      this.votingMatches = [{ mode: 'individual', answers }];
+       // Round 1 & 2 use Pairs
+       this.votingMatches = this.createAnswerPairs();
+       // Fallback for testing/low player count
+       if (this.votingMatches.length === 0) {
+           const answers = this.createIndividualVoting();
+           this.votingMatches = [{ mode: 'individual', answers }];
+       }
     }
     
     this.currentMatchIndex = 0;
@@ -502,7 +512,7 @@ class Game {
 
     if (this.emit) {
         this.emit('start-voting', {
-            mode: this.isFinalRound() ? 'thriples' : (this.settings.votingMode || 'individual'), 
+            mode: currentMatch.mode || (this.isFinalRound() ? 'medals' : 'individual'), 
             match: currentMatch,
             matchIndex: this.currentMatchIndex,
             totalMatches: this.votingMatches.length,
@@ -520,11 +530,13 @@ class Game {
              voteId = match.answers[Math.floor(Math.random() * match.answers.length)].playerId;
         } else if (match.player1) { // Pair
              voteId = Math.random() < 0.5 ? match.player1.id : match.player2.id;
-        } else if (match.answers) { // Thriple/Final
-             voteId = match.answers[Math.floor(Math.random() * match.answers.length)].id;
+        } else if (match.answers) { // Thriple/Medals
+             voteId = match.answers[Math.floor(Math.random() * match.answers.length)].id || match.answers[Math.floor(Math.random() * match.answers.length)].playerId;
         }
-        this.submitVote(player.id, voteId);
-        console.log(`Bot ${player.name} voted for: ${voteId}`);
+        if (voteId) {
+             this.submitVote(player.id, voteId);
+             console.log(`Bot ${player.name} voted for: ${voteId}`);
+        }
       }
     });
   }
@@ -557,8 +569,21 @@ class Game {
   calculateResults() {
       // Calculate results for this match only
       const voteCounts = new Map();
-      this.votes.forEach((voteId) => {
-          voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
+      const votesArray = Array.from(this.votes.values());
+
+      let totalVotesCast = 0;
+
+      // Handle both single and array votes
+      votesArray.forEach(v => {
+          if (Array.isArray(v)) {
+              v.forEach(id => {
+                  voteCounts.set(id, (voteCounts.get(id) || 0) + 1);
+                  totalVotesCast++;
+              });
+          } else {
+              voteCounts.set(v, (voteCounts.get(v) || 0) + 1);
+              totalVotesCast++;
+          }
       });
 
       // Update scores based on votes in this match
@@ -570,36 +595,42 @@ class Game {
       let candidates = [];
       if (currentMatch.player1) { // Pair
           candidates = [currentMatch.player1.id, currentMatch.player2.id];
-      } else if (currentMatch.answers) { // Thriple
-          candidates = currentMatch.answers.map(a => a.id);
+      } else if (currentMatch.answers) { // Thriple/Medals
+          candidates = currentMatch.answers.map(a => a.id || a.playerId);
       } else if (currentMatch.mode === 'individual') {
           candidates = currentMatch.answers.map(a => a.playerId);
       }
 
-      // Tally and Award Points
+      // Tally
       candidates.forEach(cid => {
           const v = voteCounts.get(cid) || 0;
           if (v > maxVotes) maxVotes = v;
       });
+      
       candidates.forEach(cid => {
           const v = voteCounts.get(cid) || 0;
           if (v === maxVotes && maxVotes > 0) matchWinners.push(cid);
           
-          // Basic scoring: 100 points per vote + bonus for winning?
-          // Or stick to game rules. Let's do simple: 100 * votes.
-          // Final round uses percentage.
           const player = this.getPlayer(cid);
           if (player) {
-              if (this.isFinalRound()) {
-                   const totalVotes = this.votes.size;
-                   if (totalVotes > 0) {
-                       player.score += Math.floor((v / totalVotes) * 1000);
-                   }
-              } else {
-                   // Standard rounds
-                   player.score += (v * 100);
-                   if (v === maxVotes && maxVotes > 0) {
-                       player.score += 150; // Bonus for winning match
+              if (this.isFinalRound()) { // Round 3: Medals
+                   // 500 points per medal
+                   player.score += (v * 500); 
+              } else { // Round 1 & 2: Percentage of Pot
+                   const baseValue = this.round === 1 ? 1000 : 2000;
+                   // Calculate percent of votes IN THIS MATCH
+                   const matchVotes = candidates.reduce((sum, c) => sum + (voteCounts.get(c)||0), 0);
+                   
+                   if (matchVotes > 0) {
+                       const percent = v / matchVotes;
+                       let points = Math.floor(percent * baseValue);
+                       
+                       // Quiplash Bonus: 100% of votes
+                       if (percent === 1.0 && matchVotes > 0) { // Ensure >0 to avoid 0/0
+                           const bonus = this.round === 1 ? 500 : 1000;
+                           points += bonus;
+                       }
+                       player.score += points;
                    }
               }
           }
@@ -625,7 +656,6 @@ class Game {
   }
 
   completeTiebreaker() {
-      // ... logic from old completeVoting for tiebreakers
      const results = this.calculateTiebreakerResults();
      if (results && this.emit) {
         this.emit('show-results', { results });
@@ -815,7 +845,7 @@ function fetchPromptsFromLocalAI(cefrLevel = 'B1') {
   const payload = JSON.stringify({
     model: 'llama3.2:3b',
     prompt:
-      `Generate 20 absurd, hilarious Quiplash-style prompts. Each must be a short, ridiculous fill-in-the-blank question or statement ending with '______' for players to fill in, like 'The worst ice cream flavor: ______' or 'A terrible name for a cat: ______'. Make them funny and over-the-top. Use vocabulary appropriate for CEFR level ${cefrLevel}. Return ONLY a valid JSON array of strings, e.g., ["prompt1", "prompt2"]. No extra text or explanations.`,
+      `Generate 50 absurd, hilarious Quiplash-style prompts. Each must be a short, ridiculous fill-in-the-blank question or statement ending with '______' for players to fill in, like 'The worst ice cream flavor: ______' or 'A terrible name for a cat: ______'. Make them funny and over-the-top. Use vocabulary appropriate for CEFR level ${cefrLevel}. Return ONLY a valid JSON array of strings, e.g., ["prompt1", "prompt2"]. No extra text or explanations.`,
     stream: false,
   });
 

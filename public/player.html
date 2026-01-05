@@ -309,6 +309,36 @@
                     `;
                 });
                 html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
+            } else if (data.mode === 'medals') {
+                document.getElementById('votingQuestion').textContent = data.match.promptText || 'Final Round!';
+                html = progressHtml + `
+                    <div style="margin-bottom:10px; text-align:center; color: #fff;">
+                        <strong>Distribute 3 Medals!</strong><br>
+                        Remaining: <span id="medalsRemaining">3</span>
+                    </div>
+                    <form id="medalsForm">
+                `;
+                // Reset counts for new round
+                for (const k in medalCounts) delete medalCounts[k];
+
+                data.match.answers.forEach((answer) => {
+                    const ansId = answer.playerId || answer.id;
+                    html += `
+                        <div class="vote-option-individual" style="display:flex; justify-content:space-between; align-items:center; padding:10px;">
+                            <div style="text-align:left; flex-grow:1; margin-right:10px; color: white; font-weight:bold;">${answer.answer}</div>
+                            <div style="display:flex; align-items:center; gap:5px;">
+                                <button type="button" onclick="adjustMedals('${ansId}', -1)" style="width:30px; height:30px; border-radius:50%; border:none; background:#ff6b6b; color:white; font-weight:bold; cursor:pointer;">-</button>
+                                <span id="count-${ansId}" style="color:white; font-weight:bold; width:20px; text-align:center;">0</span>
+                                <button type="button" onclick="adjustMedals('${ansId}', 1)" style="width:30px; height:30px; border-radius:50%; border:none; background:#4ecdc4; color:white; font-weight:bold; cursor:pointer;">+</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                    </form>
+                    <button type="button" onclick="submitMedalsVote()" class="submit-vote-btn" style="margin-top:20px; width:100%;">Submit Votes</button>
+                `;
             }
             document.getElementById('voteOptions').innerHTML = html;
         });
@@ -325,6 +355,50 @@
             document.getElementById('voteOptions').innerHTML = 
                 '<div style="text-align:center; margin-top:20px;"><h3>Voting Closed!</h3><p>Showing results on host screen...</p></div>';
         });
+
+        const medalCounts = {};
+
+        function adjustMedals(id, delta) {
+            const currentTotal = Object.values(medalCounts).reduce((a,b)=>a+b, 0);
+            const currentCount = medalCounts[id] || 0;
+            
+            if (delta > 0) {
+                if (currentTotal < 3) {
+                    medalCounts[id] = currentCount + 1;
+                }
+            } else {
+                if (currentCount > 0) {
+                    medalCounts[id] = currentCount - 1;
+                }
+            }
+            
+            // Update UI
+            const el = document.getElementById(`count-${id}`);
+            if (el) el.textContent = medalCounts[id] || 0;
+            const remEl = document.getElementById('medalsRemaining');
+            const newTotal = Object.values(medalCounts).reduce((a,b)=>a+b, 0);
+            if (remEl) remEl.textContent = (3 - newTotal);
+        }
+        
+        function submitMedalsVote() {
+            const currentTotal = Object.values(medalCounts).reduce((a,b)=>a+b, 0);
+            if (currentTotal !== 3) {
+                alert('Please distribute exactly 3 medals.');
+                return;
+            }
+            
+            // Construct array of voteIds
+            const votes = [];
+            for (const [id, count] of Object.entries(medalCounts)) {
+                for(let i=0; i<count; i++) votes.push(id);
+            }
+            
+            socket.emit('submit-vote', { roomCode, playerId, voteId: votes });
+            document.getElementById('voteOptions').innerHTML = '<p>Votes submitted! Waiting for others...</p>';
+            
+            // Clear for next time
+            for (const k in medalCounts) delete medalCounts[k];
+        }
 
         function vote(voteId) {
             socket.emit('submit-vote', { roomCode, playerId, voteId });
