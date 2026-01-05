@@ -442,6 +442,11 @@ class Game {
   startTimer(timerName, seconds) {
     this.clearTimer(timerName);
 
+    // Disable gameplay timers to allow infinite time
+    if (timerName !== 'intermission') {
+      return;
+    }
+
     this.timers.set(timerName, {
       start: Date.now(),
       duration: seconds * 1000,
@@ -537,7 +542,7 @@ class Game {
           this.completeTiebreaker();
         } else {
           this.clearTimer('vote');
-          this.processMatchResults();
+          this.calculateResults();
         }
       }
     }
@@ -683,7 +688,7 @@ class Game {
         });
       });
     } else if (timerName === 'vote' && this.state === 'voting') {
-      this.processMatchResults();
+      this.calculateResults();
     } else if (timerName === 'tiebreaker' && this.state === 'tiebreaker') {
       this.completeTiebreaker();
     }
