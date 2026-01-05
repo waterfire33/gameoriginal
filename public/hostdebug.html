@@ -155,8 +155,7 @@
                     const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
                     const botIndicator = player.isBot ? ' [BOT]' : '';
                     html += `<div class="player">
-                        ${player.name}${botIndicator} (${player.score} pts)
-                        ${player.isLeader ? ' - LEADER' : ''}<br>
+                        ${player.name}${botIndicator} (${player.score} pts)<br>
                         <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
                     </div>`;
                 });
