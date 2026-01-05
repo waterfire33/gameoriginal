@@ -542,7 +542,14 @@ class Game {
       }
     }
   
-  processMatchResults() {
+  allVotesSubmitted() {
+    if (this.state === 'tiebreaker') {
+      return this.votes.size === this.tiebreakerPlayers.length;
+    }
+    return this.votes.size === this.players.length;
+  }
+
+  calculateResults() {
       // Calculate results for this match only
       const voteCounts = new Map();
       this.votes.forEach((voteId) => {
