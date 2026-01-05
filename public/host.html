@@ -203,7 +203,15 @@
         });
 
         socket.on('error', (data) => {
-            alert('Error: ' + data.message);
+            if (data.message === 'Game not found') {
+                alert('Session expired or server restarted. Please create a new game.');
+                roomCode = null;
+                document.getElementById('createGame').style.display = 'block';
+                document.getElementById('gameLobby').style.display = 'none';
+                document.getElementById('gameArea').style.display = 'none';
+            } else {
+                alert('Error: ' + data.message);
+            }
         });
 
         // Intermission between rounds

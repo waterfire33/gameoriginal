@@ -172,6 +172,17 @@
 
         socket.on('error', (data) => {
             document.getElementById('joinError').textContent = data.message;
+            
+            // If the game is not found, clear the saved session so we don't keep retrying
+            if (data.message === 'Game not found' || data.message === 'Game is full') {
+                 localStorage.removeItem(STORAGE_KEY);
+                 // Also clear the URL param if possible to avoid user confusion upon refresh
+                 const url = new URL(window.location);
+                 if (url.searchParams.has('room')) {
+                     url.searchParams.delete('room');
+                     window.history.replaceState({}, document.title, url);
+                 }
+            }
         });
 
         // Show reconnect prompt when socket disconnects after joining
