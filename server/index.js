@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const os = require('os');
+const { spawn } = require('child_process');
 const { Server } = require('socket.io');
 const GameManager = require('./gameManager');
 
@@ -121,12 +122,6 @@ io.on('connection', (socket) => {
       playerId,
       answersRemaining: game.getRemainingAnswers(),
     });
-
-    // If all answers are in, start voting
-    if (game.allAnswersSubmitted()) {
-      const votingData = game.startVotingPhase();
-      io.to(roomCode).emit('start-voting', votingData);
-    }
   });
 
   // Player submits vote
@@ -140,33 +135,6 @@ io.on('connection', (socket) => {
       playerId,
       votesRemaining: game.getRemainingVotes(),
     });
-
-    // If all votes are in, calculate results
-    if (game.allVotesSubmitted()) {
-      let results;
-      if (game.state === 'tiebreaker') {
-        results = game.calculateTiebreakerResults();
-      } else {
-        results = game.calculateResults();
-      }
-      if (results) {
-        io.to(roomCode).emit('show-results', { results });
-
-        // After 5 seconds, start intermission/next round
-        setTimeout(() => {
-          if (game.startNextRound()) {
-            io.to(roomCode).emit('intermission', {
-              round: game.round,
-              maxRounds: game.settings.maxRounds,
-            });
-          } else {
-            io.to(roomCode).emit('game-over', {
-              finalScores: game.getFinalScores(),
-            });
-          }
-        }, 5000);
-      }
-    }
   });
 
   // Add bot to game
@@ -233,15 +201,34 @@ io.on('connection', (socket) => {
 
     try {
       await game.startGame();
-      io.to(roomCode).emit('game-started', {
-        round: game.round,
-        maxRounds: game.maxRounds,
-        prompts: game.getCurrentPrompts(),
-      });
     } catch (err) {
       console.error('Failed to start game with AI-generated prompts:', err);
       socket.emit('error', { message: 'Failed to start game. Please try again.' });
     }
+  });
+
+  // Host reconnects
+  socket.on('host-reconnect', ({ roomCode }) => {
+    const game = gameManager.getGame(roomCode);
+    if (!game) {
+      socket.emit('error', { message: 'Game not found' });
+      return;
+    }
+
+    // Update host socket ID
+    game.hostSocketId = socket.id;
+    socket.join(roomCode);
+
+    const lanIps = getLanIPv4Addresses();
+    const joinUrl = lanIps.length > 0 ? `http://${lanIps[0]}:${PORT}/player.html?room=${roomCode}` : `http://localhost:${PORT}/player.html?room=${roomCode}`;
+    
+    socket.emit('game-created', {
+      roomCode,
+      joinUrl,
+      gameState: game.getState(),
+    });
+    
+    console.log(`Host reconnected to room ${roomCode}`);
   });
 
   // Handle disconnection
@@ -276,6 +263,10 @@ server.listen(PORT, () => {
       const avahi = spawn('avahi-publish-service', ['game-server', '_http._tcp', PORT], {
         stdio: 'pipe', // Don't inherit to avoid cluttering console
         detached: true
+      });
+      
+      avahi.on('error', (err) => {
+         // Ignore errors if avahi is missing (e.g. on macOS)
       });
 
       avahi.unref();

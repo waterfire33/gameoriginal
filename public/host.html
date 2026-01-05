@@ -66,6 +66,10 @@
 
         socket.on('connect', () => {
             // Socket connected
+            if (roomCode) {
+                console.log('Reconnecting as host...');
+                socket.emit('host-reconnect', { roomCode });
+            }
         });
 
         socket.on('disconnect', () => {
@@ -134,8 +138,7 @@
                     const status = player.isConnected ? 'online' : 'offline';
                     const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
                     html += `<div class="player">
-                        ${player.name} (${player.score} pts)
-                        ${player.isLeader ? ' - LEADER' : ''}<br>
+                        ${player.name} (${player.score} pts)<br>
                         <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
                     </div>`;
                 });
@@ -231,31 +234,67 @@
         });
 
         socket.on('start-voting', (data) => {
-            let html = '<h3>Voting Time!</h3>';
-            if (data.pairs) {
-                data.pairs.forEach(pair => {
-                    html += `<div class="pair">
-                        <p><strong>Question:</strong> ${pair.promptText}</p>
-                        <p>${pair.player1.answer}</p>
-                        <p>VS</p>
-                        <p>${pair.player2.answer}</p>
-                    </div>`;
-                });
-            } else if (data.thriples) {
-                data.thriples.forEach(triple => {
-                    html += `<div class="triple">
-                        <p><strong>Question:</strong> ${triple.promptText}</p>
-                        <p>1. ${triple.answers[0].answer}</p>
-                        <p>2. ${triple.answers[1].answer}</p>
-                        ${triple.answers[2] ? `<p>3. ${triple.answers[2].answer}</p>` : ''}
-                    </div>`;
+            let html = `<h3>Voting Time! <span style="font-size:0.6em">(${data.matchIndex + 1}/${data.totalMatches})</span></h3>`;
+            const match = data.match;
+
+            if (data.mode === 'pairs') {
+                html += `<div class="pair" style="margin-bottom: 20px; padding: 10px; border: 1px solid #5dade2; border-radius: 8px;">
+                    <p><strong>Question:</strong> ${match.promptText}</p>
+                    <div style="display: flex; justify-content: space-around; font-size: 1.5em; margin-top: 20px;">
+                        <span id="opt-${match.player1.id}">${match.player1.answer}</span>
+                        <span style="color:#aaa">VS</span>
+                        <span id="opt-${match.player2.id}">${match.player2.answer}</span>
+                    </div>
+                </div>`;
+            } else if (data.mode === 'thriples') {
+                html += `<div class="triple" style="margin-bottom: 20px; padding: 10px; border: 1px solid #5dade2; border-radius: 8px;">
+                    <p><strong>Question:</strong> ${match.promptText}</p>
+                    <div style="font-size: 1.3em; margin-top: 15px;">
+                        ${match.answers.map((a, i) => `<div style="margin: 10px 0;" id="opt-${a.id}"><strong>${i+1}.</strong> ${a.answer}</div>`).join('')}
+                    </div>
+                </div>`;
+            } else if (data.mode === 'individual') {
+                html += '<p>Vote for the funniest answer!</p>';
+                match.answers.forEach(ans => {
+                    html += `<p style="font-size: 1.1em; margin: 5px 0;" id="opt-${ans.playerId}">"${ans.answer}"</p>`;
                 });
             }
             document.getElementById('gameState').innerHTML = html;
         });
 
+        socket.on('match-results', (data) => {
+            // Visualize results on the current match
+            // data.votes = { playerId: count, ... }
+            // data.winners = [playerId, ...]
+            
+            const votes = data.votes;
+            for (const [playerId, count] of Object.entries(votes)) {
+                const el = document.getElementById(`opt-${playerId}`);
+                if (el) {
+                    el.innerHTML += ` <span style="color: #f1c40f; font-weight: bold;">(+${count})</span>`;
+                    if (data.winners.includes(playerId)) {
+                        el.style.border = "2px solid #2ecc71";
+                        el.style.backgroundColor = "rgba(46, 204, 113, 0.1)";
+                        el.style.borderRadius = "8px";
+                        el.style.padding = "4px 8px";
+                        el.innerHTML += ` 🏆`;
+                    }
+                }
+            }
+        });
+
         socket.on('show-results', (data) => {
             let html = '<h3>Results!</h3>';
+            
+            if (data.results.isFinal) {
+                html += '<h4>Final Round Rankings:</h4>';
+                data.results.answers.forEach((ans, idx) => {
+                    html += `<p><strong>${idx + 1}. ${ans.name}</strong>: "${ans.answer}" (${ans.votes} votes)</p>`;
+                });
+                html += '<br>';
+            }
+
+            html += '<h4>Scores:</h4>';
             data.results.scores.forEach(score => {
                 html += `<p>${score.name}: ${score.score}</p>`;
             });
@@ -268,7 +307,6 @@
             document.getElementById('gameLobby').style.display = 'none';
             document.getElementById('gameArea').style.display = 'block';
             document.getElementById('gameState').innerHTML = '';
-            document.getElementById('timer').innerHTML = '';
             document.getElementById('results').innerHTML = '';
 
             const gameOverBanner = document.getElementById('gameOverBanner');
@@ -303,8 +341,7 @@
                     const status = player.isConnected ? 'online' : 'offline';
                     const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
                     html += `<div class="player">
-                        ${player.name} (${player.score} pts)
-                        ${player.isLeader ? ' - LEADER' : ''}<br>
+                        ${player.name} (${player.score} pts)<br>
                         <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
                     </div>`;
                 });
@@ -312,18 +349,22 @@
 
                 // Enable/disable start button based on players
                 const startBtn = document.getElementById('hostStartBtn');
-                startBtn.disabled = state.players.length < 2;
-                startBtn.textContent = state.players.length < 2 ?
-                    `Need ${2 - state.players.length} more player(s)` :
-                    'Start Game';
+                if (startBtn) {
+                   startBtn.disabled = state.players.length < 2;
+                   startBtn.textContent = state.players.length < 2 ?
+                       `Need ${2 - state.players.length} more player(s)` :
+                       'Start Game';
+                }
             }
 
             // Always update total rounds when provided, even if round is 0
             if (typeof state.maxRounds !== 'undefined') {
-                document.getElementById('totalRounds').textContent = state.maxRounds;
+                const totalRoundsEl = document.getElementById('totalRounds');
+                if (totalRoundsEl) totalRoundsEl.textContent = state.maxRounds;
             }
             if (typeof state.round !== 'undefined') {
-                document.getElementById('currentRound').textContent = state.round;
+                const currentRoundEl = document.getElementById('currentRound');
+                if (currentRoundEl) currentRoundEl.textContent = state.round;
             }
         }
     </script>

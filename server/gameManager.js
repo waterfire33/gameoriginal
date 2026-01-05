@@ -92,7 +92,6 @@ class Game {
 
     this.players = [];
     this.hostId = null; // kept for compatibility but unused for gameplay
-    this.leaderId = null; // first player to join; controls game start
     this.state = 'waiting'; // waiting, answering, intermission, voting, results
     this.round = 0;
 
@@ -104,48 +103,37 @@ class Game {
     // Prompts are lazily loaded from the local AI model on first game start.
     this.prompts = [];
     this.currentPrompts = [];
-    this.answers = new Map(); // playerId -> { promptId, answer }
+    this.answers = new Map(); // playerId -> Map(promptId -> { promptId, answer, timestamp })
     this.votes = new Map(); // playerId -> voteId
-    this.votingPairs = [];
+    this.votingMatches = [];
+    this.currentMatchIndex = 0;
 
     // Timers
     this.timers = new Map();
   }
 
   addPlayer(name, socketId, isHost = false, isBot = false) {
-    // Host no longer joins as a player; only real players are kept here
     const player = {
       id: uuidv4(),
       name,
       socketId,
       score: 0,
-      isHost: false,
-      isLeader: false,
       isConnected: true,
       isBot,
     };
 
     this.players.push(player);
-
-    // First player to join becomes leader
-    if (!this.leaderId) {
-      this.leaderId = player.id;
-      player.isLeader = true;
-    }
-
     return player;
   }
 
   addBot() {
-    if (!this.debugMode) return null;
-    if (this.players.length >= 8) return null; // Max players
+    if (this.players.length >= 8) return null; 
     this.botsCount++;
     const botName = `Bot ${this.botsCount}`;
     return this.addPlayer(botName, null, false, true);
   }
 
   removeBot() {
-    if (!this.debugMode) return;
     const bots = this.players.filter(p => p.isBot);
     if (bots.length === 0) return;
     const lastBot = bots[bots.length - 1];
@@ -153,66 +141,40 @@ class Game {
     this.botsCount--;
   }
 
-  // Hard removal of a player (not used on disconnect anymore, but kept for
-  // potential future admin/kick features).
   removePlayer(playerId) {
     this.players = this.players.filter((p) => p.id !== playerId);
     this.answers.delete(playerId);
     this.votes.delete(playerId);
-
-    // If the leader leaves, assign the first remaining player as new leader
-    if (this.leaderId === playerId) {
-      this.leaderId = this.players.length > 0 ? this.players[0].id : null;
-      this.players.forEach((p, index) => {
-        p.isLeader = index === 0;
-      });
-    }
   }
 
   async startGame() {
-    // Ensure prompts are loaded from the local AI before the first round.
     await this.loadPromptsFromAIIfNeeded();
-
-    this.state = 'answering';
-    this.round = 1;
-    this.currentPrompts = this.assignPrompts();
-    this.startTimer('answer', this.settings.answerTime);
+    this.startAnsweringPhase();
   }
 
   async loadPromptsFromAIIfNeeded() {
-    if (this.prompts && this.prompts.length > 0) {
-      return;
-    }
+    if (this.prompts && this.prompts.length > 0) return;
 
     try {
       const aiText = await fetchPromptsFromLocalAI(this.settings.cefrLevel || 'B1');
-
       let parsed;
       try {
-        // Prefer strict JSON output from the model
         parsed = JSON.parse(aiText);
       } catch (e) {
-        // Fallback: treat the response as a newline-separated list
-        parsed = aiText
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => !!line && !line.startsWith('#'));
+        parsed = aiText.split('\n').map((line) => line.trim()).filter((line) => !!line);
       }
 
       if (!Array.isArray(parsed) || parsed.length === 0) {
-        console.warn('Local AI returned no usable prompts; falling back to defaults.');
         this.prompts = this.generateFallbackPrompts();
         return;
       }
 
-      // Validate and filter prompts
       const validPrompts = parsed
         .map(text => String(text).trim())
         .filter(text => text.length > 0 && text.length < 100 && text.endsWith('______'))
-        .slice(0, 20); // Limit to 20
+        .slice(0, 20);
 
       if (validPrompts.length < 5) {
-        console.warn('Too few valid prompts from AI; falling back to defaults.');
         this.prompts = this.generateFallbackPrompts();
         return;
       }
@@ -222,13 +184,12 @@ class Game {
         text,
       }));
     } catch (err) {
-      console.error('Failed to load prompts from local AI; using fallback prompts instead.', err);
+      console.error('Failed to load prompts:', err);
       this.prompts = this.generateFallbackPrompts();
     }
   }
 
   generateFallbackPrompts() {
-    // Static backup prompt database if the local AI is unavailable - Quiplash-style
     return [
       { id: 1, text: 'A terrible name for a dog: ______' },
       { id: 2, text: 'A terrible name for a cat: ______' },
@@ -240,380 +201,60 @@ class Game {
       { id: 8, text: 'The worst job in the world: ______' },
       { id: 9, text: 'An embarrassing tattoo: ______' },
       { id: 10, text: 'The lamest excuse for being late: ______' },
-      { id: 11, text: 'A ridiculous superhero name: ______' },
-      { id: 12, text: 'The worst gift to give someone: ______' },
-      { id: 13, text: 'An awful band name: ______' },
-      { id: 14, text: 'The most boring hobby: ______' },
-      { id: 15, text: 'A terrible restaurant name: ______' },
-      { id: 16, text: 'Worst thing to say at a wedding: ______' },
-      { id: 17, text: 'An ugly hat: ______' },
-      { id: 18, text: 'The most annoying sound: ______' },
-      { id: 19, text: 'A horrible vacation spot: ______' },
-      { id: 20, text: 'The worst magic trick: ______' },
     ];
   }
 
   assignPrompts() {
-    // Quiplash-style: Assign the same shared prompt to all players
+    // Assign a single random prompt to all players (Tournament style)
     const sharedPrompt = this.prompts[Math.floor(Math.random() * this.prompts.length)];
     const prompts = [];
-
     this.players.forEach((player) => {
       prompts.push({
         playerId: player.id,
         promptId: sharedPrompt.id,
         text: sharedPrompt.text,
-        variant: 'A', // Shared, no variation needed
       });
     });
-
     return prompts;
   }
 
   async simulateBotAnswers() {
     if (!this.debugMode) return;
-    console.log(`Simulating answers for ${this.players.filter(p => p.isBot).length} bots`);
     const botPromises = [];
     this.players.forEach(player => {
       if (player.isBot) {
-        const prompt = this.currentPrompts.find(p => p.playerId === player.id);
-        if (prompt) {
-          const promise = generateBotAnswer(prompt.text, this.settings.cefrLevel || 'B1').then(answer => {
-            this.submitAnswer(player.id, prompt.promptId, answer);
-            console.log(`Bot ${player.name} submitted: ${answer}`);
-          });
-          botPromises.push(promise);
-        }
+        const playerPrompts = this.currentPrompts.filter(p => p.playerId === player.id);
+        playerPrompts.forEach(prompt => {
+            const promise = generateBotAnswer(prompt.text, this.settings.cefrLevel || 'B1').then(answer => {
+                this.submitAnswer(player.id, prompt.promptId, answer);
+            });
+            botPromises.push(promise);
+        });
       }
     });
     await Promise.all(botPromises);
   }
 
-   submitAnswer(playerId, promptId, answer) {
-      this.answers.set(playerId, { promptId, answer, timestamp: Date.now() });
-
-      if (this.allAnswersSubmitted()) {
-        this.clearTimer('answer');
-        this.startVotingPhase();
-      }
+  submitAnswer(playerId, promptId, answer) {
+    if (!this.answers.has(playerId)) {
+        this.answers.set(playerId, new Map());
     }
+    this.answers.get(playerId).set(promptId, { promptId, answer, timestamp: Date.now() });
+
+    if (this.allAnswersSubmitted()) {
+      this.clearTimer('answer');
+      this.startVotingPhase();
+    }
+  }
 
   allAnswersSubmitted() {
-    return this.answers.size === this.players.length;
+     let totalSubmitted = 0;
+     this.answers.forEach(map => totalSubmitted += map.size);
+     return totalSubmitted >= this.currentPrompts.length;
   }
 
-  startVotingPhase() {
-    let votingData;
-    if (this.settings.votingMode === 'pairs') {
-      const pairs = this.createAnswerPairs();
-      votingData = { mode: 'pairs', pairs };
-    } else if (this.settings.votingMode === 'thriples') {
-      const thriples = this.createThriplesVoting();
-      votingData = { mode: 'thriples', thriples };
-    } else {
-      const answers = this.createIndividualVoting();
-      votingData = { mode: 'individual', answers };
-    }
-    this.simulateBotVotes(votingData);
-    return votingData;
-  }
-
-  createIndividualVoting() {
-    // Collect all answers and shuffle for fair display
-    const allAnswers = Array.from(this.answers.entries()).map(([playerId, answerData]) => ({
-      playerId,
-      name: this.getPlayer(playerId).name,
-      answer: answerData.answer,
-      promptText: this.prompts.find(p => p.id === answerData.promptId)?.text || '',
-    }));
-
-    // Shuffle answers
-    for (let i = allAnswers.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [allAnswers[i], allAnswers[j]] = [allAnswers[j], allAnswers[i]];
-    }
-
-    this.votingAnswers = allAnswers;
-    this.state = 'voting';
-    this.startTimer('vote', this.settings.voteTime);
-
-    return allAnswers;
-  }
-
-  createAnswerPairs() {
-    this.votingPairs = [];
-    const answersArray = Array.from(this.answers.entries());
-
-    // Shuffle and pair answers
-    for (let i = 0; i < answersArray.length; i += 2) {
-      if (i + 1 < answersArray.length) {
-        const [playerId1, answer1] = answersArray[i];
-        const [playerId2, answer2] = answersArray[i + 1];
-
-        const pairId = uuidv4();
-
-        // Look up the original prompt text using the promptId from the first answer
-        const prompt = this.prompts.find((p) => p.id === answer1.promptId) || null;
-        const promptText = prompt ? prompt.text : '';
-
-        this.votingPairs.push({
-          id: pairId,
-          promptId: answer1.promptId,
-          promptText,
-          player1: {
-            id: playerId1,
-            name: this.getPlayer(playerId1).name,
-            answer: answer1.answer,
-          },
-          player2: {
-            id: playerId2,
-            name: this.getPlayer(playerId2).name,
-            answer: answer2.answer,
-          },
-        });
-      }
-    }
-
-    this.state = 'voting';
-    this.startTimer('vote', this.settings.voteTime);
-
-    return this.votingPairs;
-  }
-
-  createThriplesVoting() {
-    this.votingThriples = [];
-    const answersArray = Array.from(this.answers.entries());
-
-    // Shuffle and group in threes
-    const shuffled = answersArray.sort(() => Math.random() - 0.5);
-    for (let i = 0; i < shuffled.length; i += 3) {
-      const group = shuffled.slice(i, i + 3);
-      if (group.length >= 2) { // At least 2 for voting
-        const tripleId = uuidv4();
-        const promptId = group[0][1].promptId;
-        const prompt = this.prompts.find((p) => p.id === promptId) || null;
-        const promptText = prompt ? prompt.text : '';
-
-        const answers = group.map(([playerId, answerData]) => ({
-          id: playerId,
-          name: this.getPlayer(playerId).name,
-          answer: answerData.answer,
-        }));
-
-        this.votingThriples.push({
-          id: tripleId,
-          promptId,
-          promptText,
-          answers,
-        });
-      }
-    }
-
-    this.state = 'voting';
-    this.startTimer('vote', this.settings.voteTime);
-
-    return this.votingThriples;
-  }
-
-  simulateBotVotes(votingData) {
-    if (!this.debugMode) return;
-    this.players.forEach(player => {
-      if (player.isBot) {
-        let voteId;
-        if (votingData.mode === 'pairs') {
-          const pairs = votingData.pairs;
-          voteId = pairs[Math.floor(Math.random() * pairs.length)].id;
-        } else if (votingData.mode === 'thriples') {
-          const thriples = votingData.thriples;
-          const triple = thriples[Math.floor(Math.random() * thriples.length)];
-          voteId = triple.answers[Math.floor(Math.random() * triple.answers.length)].id;
-        } else {
-          const answers = votingData.answers;
-          voteId = answers[Math.floor(Math.random() * answers.length)].playerId;
-        }
-        this.submitVote(player.id, voteId);
-        console.log(`Bot ${player.name} voted for: ${voteId}`);
-      }
-    });
-  }
-
-  simulateBotTiebreakerVotes(tiedAnswers, tiedPlayerIds) {
-    if (!this.debugMode) return;
-    this.players.forEach(player => {
-      if (player.isBot && tiedPlayerIds.includes(player.id)) {
-        const voteId = tiedAnswers[Math.floor(Math.random() * tiedAnswers.length)].playerId;
-        this.submitVote(player.id, voteId);
-        console.log(`Bot ${player.name} tiebreaker voted for: ${voteId}`);
-      }
-    });
-  }
-
-   submitVote(playerId, voteId) {
-      // Check if player is allowed to vote in tiebreaker
-      if (this.state === 'tiebreaker' && !this.tiebreakerPlayers.includes(playerId)) {
-        return; // Ignore vote from non-tied player
-      }
-
-      this.votes.set(playerId, voteId);
-
-      if (this.allVotesSubmitted()) {
-        if (this.state === 'tiebreaker') {
-          this.clearTimer('tiebreaker');
-        } else {
-          this.clearTimer('vote');
-        }
-      }
-    }
-
-  allVotesSubmitted() {
-    if (this.state === 'tiebreaker') {
-      return this.votes.size === this.tiebreakerPlayers.length;
-    }
-    return this.votes.size === this.players.length;
-  }
-
-  calculateResults() {
-    const voteCounts = new Map();
-
-    // Count votes (voteId is now playerId)
-    this.votes.forEach((voteId) => {
-      voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
-    });
-
-    // Find the maximum vote count
-    let maxVotes = 0;
-    voteCounts.forEach((count) => {
-      if (count > maxVotes) maxVotes = count;
-    });
-
-    // Find all players with max votes (potential winners)
-    const winners = [];
-    voteCounts.forEach((count, playerId) => {
-      if (count === maxVotes) winners.push(playerId);
-    });
-
-    if (winners.length === 1) {
-      // Single winner
-      const winner = this.getPlayer(winners[0]);
-      if (winner) winner.score += maxVotes;
-
-      this.state = 'results';
-      return this.buildResultsData(voteCounts);
-    } else {
-      // Tie - start tiebreaker
-      this.startTiebreaker(winners, voteCounts);
-      return null; // Don't emit results yet
-    }
-  }
-
-  buildResultsData(voteCounts) {
-    // Build results based on voting mode
-    let answers = [];
-    if (this.settings.votingMode === 'pairs') {
-      answers = this.votingPairs.flatMap(pair => [
-        { playerId: pair.player1.id, name: pair.player1.name, answer: pair.player1.answer, votes: voteCounts.get(pair.player1.id) || 0 },
-        { playerId: pair.player2.id, name: pair.player2.name, answer: pair.player2.answer, votes: voteCounts.get(pair.player2.id) || 0 }
-      ]);
-    } else {
-      answers = this.votingAnswers.map(ans => ({
-        ...ans,
-        votes: voteCounts.get(ans.playerId) || 0
-      }));
-    }
-
-    return {
-      answers,
-      scores: this.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
-      votingMode: this.settings.votingMode
-    };
-  }
-
-  startTiebreaker(tiedPlayerIds, previousVoteCounts) {
-    // Collect tied answers
-    const tiedAnswers = [];
-    tiedPlayerIds.forEach(playerId => {
-      const player = this.getPlayer(playerId);
-      const answerData = this.answers.get(playerId);
-      if (player && answerData) {
-        tiedAnswers.push({
-          playerId,
-          name: player.name,
-          answer: answerData.answer,
-          previousVotes: previousVoteCounts.get(playerId) || 0
-        });
-      }
-    });
-
-    // Shuffle tied answers
-    for (let i = tiedAnswers.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [tiedAnswers[i], tiedAnswers[j]] = [tiedAnswers[j], tiedAnswers[i]];
-    }
-
-    this.tiebreakerAnswers = tiedAnswers;
-    this.tiebreakerPlayers = tiedPlayerIds;
-    this.state = 'tiebreaker';
-
-    // Clear previous votes and start new voting
-    this.votes.clear();
-    this.startTimer('tiebreaker', this.settings.voteTime);
-
-    // Emit tiebreaker voting to all players
-    if (this.emit) {
-      this.emit('tiebreaker-voting', {
-        tiedAnswers,
-        allowedVoters: tiedPlayerIds
-      });
-    }
-
-    // Simulate bot votes for tiebreaker
-    this.simulateBotTiebreakerVotes(tiedAnswers, tiedPlayerIds);
-  }
-
-  calculateTiebreakerResults() {
-    const voteCounts = new Map();
-
-    // Count tiebreaker votes
-    this.votes.forEach((voteId) => {
-      voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
-    });
-
-    // Find max votes in tiebreaker
-    let maxVotes = 0;
-    voteCounts.forEach((count) => {
-      if (count > maxVotes) maxVotes = count;
-    });
-
-    // Find winners (may still have ties, but split points)
-    const winners = [];
-    voteCounts.forEach((count, playerId) => {
-      if (count === maxVotes) winners.push(playerId);
-    });
-
-    // Award points (split if still tied)
-    const pointsPerWinner = Math.floor(maxVotes / winners.length);
-    winners.forEach(playerId => {
-      const player = this.getPlayer(playerId);
-      if (player) player.score += pointsPerWinner;
-    });
-
-    this.state = 'results';
-    return this.buildTiebreakerResultsData(voteCounts, winners);
-  }
-
-  buildTiebreakerResultsData(voteCounts, winners) {
-    const answers = this.tiebreakerAnswers.map(ans => ({
-      ...ans,
-      votes: voteCounts.get(ans.playerId) || 0,
-      isWinner: winners.includes(ans.playerId)
-    }));
-
-    return {
-      answers,
-      scores: this.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
-      votingMode: this.settings.votingMode,
-      wasTiebreaker: true
-    };
+  isFinalRound() {
+    return this.round >= this.settings.maxRounds;
   }
 
   startNextRound() {
@@ -632,8 +273,161 @@ class Game {
   startAnsweringPhase() {
     this.state = 'answering';
     this.currentPrompts = this.assignPrompts();
+    this.answers.clear();
     this.startTimer('answer', this.settings.answerTime);
     this.simulateBotAnswers();
+  }
+
+  createFinalRoundVoting() {
+    // Reuse thriples logic for final round
+    return this.createThriplesVoting();
+  }
+
+  createAnswerPairs() {
+    const matches = [];
+    const answersArray = Array.from(this.answers.entries());
+
+    // Group answers by promptId
+    const answersByPrompt = new Map();
+    answersArray.forEach(([playerId, answerMap]) => {
+        answerMap.forEach((answerData, promptId) => {
+            if (!answersByPrompt.has(promptId)) {
+                answersByPrompt.set(promptId, []);
+            }
+            answersByPrompt.get(promptId).push({
+                playerId,
+                ...answerData
+            });
+        });
+    });
+
+    // Create pairs for each prompt
+    answersByPrompt.forEach((answers, promptId) => {
+        // Shuffle answers for this prompt
+        for (let i = answers.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [answers[i], answers[j]] = [answers[j], answers[i]];
+        }
+
+        // Create pairs
+        for (let i = 0; i < answers.length; i += 2) {
+            if (i + 1 < answers.length) {
+                const prompt = this.prompts.find(p => p.id === promptId);
+                matches.push({
+                    mode: 'pairs',
+                    promptId,
+                    promptText: prompt ? prompt.text : '',
+                    player1: {
+                        id: answers[i].playerId,
+                        name: this.getPlayer(answers[i].playerId).name,
+                        answer: answers[i].answer
+                    },
+                    player2: {
+                        id: answers[i+1].playerId,
+                        name: this.getPlayer(answers[i+1].playerId).name,
+                        answer: answers[i+1].answer
+                    }
+                });
+            }
+        }
+    });
+    
+    return matches.sort(() => Math.random() - 0.5);
+  }
+
+  createThriplesVoting() {
+    const matches = [];
+    const answersArray = Array.from(this.answers.entries());
+    
+    // Group answers by promptId
+    const answersByPrompt = new Map();
+    answersArray.forEach(([playerId, answerMap]) => {
+        answerMap.forEach((answerData, promptId) => {
+            if (!answersByPrompt.has(promptId)) {
+                answersByPrompt.set(promptId, []);
+            }
+            answersByPrompt.get(promptId).push({
+                id: playerId,
+                playerId,
+                ...answerData
+            });
+        });
+    });
+
+    answersByPrompt.forEach((answers, promptId) => {
+        // Shuffle
+        for (let i = answers.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [answers[i], answers[j]] = [answers[j], answers[i]];
+        }
+
+        // Group in 3s
+        for (let i = 0; i < answers.length; i += 3) {
+            const group = answers.slice(i, i + 3);
+            if (group.length >= 2) {
+                 const prompt = this.prompts.find(p => p.id === promptId);
+                 matches.push({
+                    mode: 'thriples',
+                    promptId,
+                    promptText: prompt ? prompt.text : '',
+                    answers: group.map(a => ({
+                        id: a.playerId,
+                        name: this.getPlayer(a.playerId).name,
+                        answer: a.answer
+                    }))
+                 });
+            }
+        }
+    });
+
+    return matches.sort(() => Math.random() - 0.5);
+  }
+
+  createIndividualVoting() {
+    const allAnswers = [];
+    this.answers.forEach((answerMap, playerId) => {
+        answerMap.forEach((answerData) => {
+             allAnswers.push({
+                playerId,
+                name: this.getPlayer(playerId).name,
+                answer: answerData.answer,
+                promptText: this.prompts.find(p => p.id === answerData.promptId)?.text || ''
+            });
+        });
+    });
+    return allAnswers;
+  }
+
+  calculateTiebreakerResults() {
+       const voteCounts = new Map();
+        this.votes.forEach((voteId) => {
+          voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
+        });
+
+        let maxVotes = 0;
+        voteCounts.forEach((count) => {
+          if (count > maxVotes) maxVotes = count;
+        });
+
+        const winners = [];
+        voteCounts.forEach((count, playerId) => {
+          if (count === maxVotes) winners.push(playerId);
+        });
+        
+        winners.forEach(playerId => {
+             const player = this.getPlayer(playerId);
+             if (player) player.score += 500;
+        });
+
+        return {
+            answers: this.tiebreakerAnswers ? this.tiebreakerAnswers.map(ans => ({
+                ...ans,
+                votes: voteCounts.get(ans.playerId) || 0,
+                isWinner: winners.includes(ans.playerId)
+            })) : [],
+            scores: this.getFinalScores(),
+            isFinal: true
+        };
   }
 
   getPlayer(playerId) {
@@ -661,9 +455,199 @@ class Game {
       }, 1000),
     });
 
-    // Emit timer start for client countdown
     if (this.emit) {
       this.emit('timer-start', { phase: timerName, duration: seconds });
+    }
+  }
+
+  startVotingPhase() {
+    this.votes.clear();
+    
+    if (this.isFinalRound()) {
+      this.votingMatches = this.createFinalRoundVoting();
+    } else if (this.settings.votingMode === 'pairs') {
+      this.votingMatches = this.createAnswerPairs();
+    } else if (this.settings.votingMode === 'thriples') {
+      this.votingMatches = this.createThriplesVoting();
+    } else {
+      // Individual: Treat as one big match
+      const answers = this.createIndividualVoting();
+      this.votingMatches = [{ mode: 'individual', answers }];
+    }
+    
+    this.currentMatchIndex = 0;
+    this.startNextVotingMatch();
+  }
+
+  startNextVotingMatch() {
+    if (this.currentMatchIndex >= this.votingMatches.length) {
+       // All matches done
+       this.completeVotingPhase();
+       return;
+    }
+
+    this.votes.clear();
+    const currentMatch = this.votingMatches[this.currentMatchIndex];
+    
+    this.state = 'voting';
+    this.startTimer('vote', this.settings.voteTime);
+    
+    this.simulateBotVotesForMatch(currentMatch);
+
+    if (this.emit) {
+        this.emit('start-voting', {
+            mode: this.isFinalRound() ? 'thriples' : (this.settings.votingMode || 'individual'), 
+            match: currentMatch,
+            matchIndex: this.currentMatchIndex,
+            totalMatches: this.votingMatches.length,
+            isFinal: this.isFinalRound()
+        });
+    }
+  }
+
+  simulateBotVotesForMatch(match) {
+    if (!this.debugMode) return;
+    this.players.forEach(player => {
+      if (player.isBot) {
+        let voteId;
+        if (match.mode === 'individual') {
+             voteId = match.answers[Math.floor(Math.random() * match.answers.length)].playerId;
+        } else if (match.player1) { // Pair
+             voteId = Math.random() < 0.5 ? match.player1.id : match.player2.id;
+        } else if (match.answers) { // Thriple/Final
+             voteId = match.answers[Math.floor(Math.random() * match.answers.length)].id;
+        }
+        this.submitVote(player.id, voteId);
+        console.log(`Bot ${player.name} voted for: ${voteId}`);
+      }
+    });
+  }
+
+   submitVote(playerId, voteId) {
+      if (this.state === 'tiebreaker' && !this.tiebreakerPlayers.includes(playerId)) {
+        return; 
+      }
+
+      this.votes.set(playerId, voteId);
+
+      if (this.allVotesSubmitted()) {
+        if (this.state === 'tiebreaker') {
+          this.clearTimer('tiebreaker');
+          this.completeTiebreaker();
+        } else {
+          this.clearTimer('vote');
+          this.processMatchResults();
+        }
+      }
+    }
+  
+  processMatchResults() {
+      // Calculate results for this match only
+      const voteCounts = new Map();
+      this.votes.forEach((voteId) => {
+          voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
+      });
+
+      // Update scores based on votes in this match
+      const currentMatch = this.votingMatches[this.currentMatchIndex];
+      let matchWinners = [];
+      let maxVotes = 0;
+
+      // Identify candidates in this match
+      let candidates = [];
+      if (currentMatch.player1) { // Pair
+          candidates = [currentMatch.player1.id, currentMatch.player2.id];
+      } else if (currentMatch.answers) { // Thriple
+          candidates = currentMatch.answers.map(a => a.id);
+      } else if (currentMatch.mode === 'individual') {
+          candidates = currentMatch.answers.map(a => a.playerId);
+      }
+
+      // Tally and Award Points
+      candidates.forEach(cid => {
+          const v = voteCounts.get(cid) || 0;
+          if (v > maxVotes) maxVotes = v;
+      });
+      candidates.forEach(cid => {
+          const v = voteCounts.get(cid) || 0;
+          if (v === maxVotes && maxVotes > 0) matchWinners.push(cid);
+          
+          // Basic scoring: 100 points per vote + bonus for winning?
+          // Or stick to game rules. Let's do simple: 100 * votes.
+          // Final round uses percentage.
+          const player = this.getPlayer(cid);
+          if (player) {
+              if (this.isFinalRound()) {
+                   const totalVotes = this.votes.size;
+                   if (totalVotes > 0) {
+                       player.score += Math.floor((v / totalVotes) * 1000);
+                   }
+              } else {
+                   // Standard rounds
+                   player.score += (v * 100);
+                   if (v === maxVotes && maxVotes > 0) {
+                       player.score += 150; // Bonus for winning match
+                   }
+              }
+          }
+      });
+
+      // Prepare Match Result Data
+      const results = {
+          matchIndex: this.currentMatchIndex,
+          votes: Object.fromEntries(voteCounts),
+          winners: matchWinners,
+          isFinal: this.isFinalRound()
+      };
+
+      if (this.emit) {
+          this.emit('match-results', results);
+      }
+
+      // Wait 3 seconds then next match
+      setTimeout(() => {
+          this.currentMatchIndex++;
+          this.startNextVotingMatch();
+      }, 5000); // 5s to see results
+  }
+
+  completeTiebreaker() {
+      // ... logic from old completeVoting for tiebreakers
+     const results = this.calculateTiebreakerResults();
+     if (results && this.emit) {
+        this.emit('show-results', { results });
+        setTimeout(() => {
+            if (this.startNextRound()) {
+              this.emit('intermission', { round: this.round, maxRounds: this.settings.maxRounds });
+            } else {
+              this.emit('game-over', { finalScores: this.getFinalScores() });
+            }
+        }, 5000);
+     }
+  }
+
+  completeVotingPhase() {
+    // Show cumulative results after all matches
+    const results = {
+        scores: this.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
+        isFinal: this.isFinalRound()
+    };
+
+    if (this.emit) {
+      this.emit('show-results', { results });
+
+      setTimeout(() => {
+        if (this.startNextRound()) {
+          this.emit('intermission', {
+            round: this.round,
+            maxRounds: this.settings.maxRounds,
+          });
+        } else {
+          this.emit('game-over', {
+            finalScores: this.getFinalScores(),
+          });
+        }
+      }, 5000);
     }
   }
 
@@ -680,21 +664,20 @@ class Game {
         });
       }
     } else if (timerName === 'answer' && this.state === 'answering') {
-      // Auto-submit random answers for players who didn't answer
-      this.players.forEach((player) => {
-        if (!this.answers.has(player.id)) {
-          const promptForPlayer = this.currentPrompts.find((p) => p.playerId === player.id);
-          this.submitAnswer(
-            player.id,
-            promptForPlayer ? promptForPlayer.promptId : null,
-            '(No answer submitted)'
-          );
-        }
+      // Auto-submit random answers...
+       this.players.forEach((player) => {
+        const playerPrompts = this.currentPrompts.filter(p => p.playerId === player.id);
+        const playerAnswers = this.answers.get(player.id) || new Map();
+        playerPrompts.forEach(prompt => {
+          if (!playerAnswers.has(prompt.promptId)) {
+            this.submitAnswer(player.id, prompt.promptId, '(No answer submitted)');
+          }
+        });
       });
-
-      if (this.allAnswersSubmitted()) {
-        this.createAnswerPairs();
-      }
+    } else if (timerName === 'vote' && this.state === 'voting') {
+      this.processMatchResults();
+    } else if (timerName === 'tiebreaker' && this.state === 'tiebreaker') {
+      this.completeTiebreaker();
     }
   }
 
@@ -707,7 +690,8 @@ class Game {
   }
 
   getState() {
-    const leader = this.leaderId ? this.getPlayer(this.leaderId) : null;
+    let answersSubmittedCount = 0;
+    this.answers.forEach(m => answersSubmittedCount += m.size);
 
     return {
       roomCode: this.roomCode,
@@ -719,13 +703,10 @@ class Game {
         id: p.id,
         name: p.name,
         score: p.score,
-        isLeader: !!p.isLeader,
         isConnected: p.isConnected !== false,
         isBot: !!p.isBot,
       })),
-      leaderId: this.leaderId,
-      leaderName: leader ? leader.name : null,
-      answersSubmitted: this.answers.size,
+      answersSubmitted: answersSubmittedCount,
       totalPlayers: this.players.length,
       currentPrompts: this.state === 'answering' ? this.currentPrompts : [],
     };
@@ -736,7 +717,9 @@ class Game {
   }
 
   getRemainingAnswers() {
-    return this.players.length - this.answers.size;
+    let answersSubmittedCount = 0;
+    this.answers.forEach(m => answersSubmittedCount += m.size);
+    return this.currentPrompts.length - answersSubmittedCount;
   }
 
   getRemainingVotes() {

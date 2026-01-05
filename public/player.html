@@ -23,11 +23,10 @@
             <button id="reconnectButton" onclick="attemptReconnect()">Connect</button>
         </div>
         <div id="waitingRoom" style="display: none;">
-            <h3 id="waitingHeader">Waiting for the leader to start the game...</h3>
+            <h3 id="waitingHeader">Waiting for the host to start the game...</h3>
             <p id="waitingRuleText">
-                The <strong>first player</strong> to join is the leader.
-                When at least <strong>2 players</strong> have joined, the leader
-                will see a <strong>"Start Game"</strong> button below.
+                When at least <strong>2 players</strong> have joined, the host
+                will start the game.
             </p>
             <div id="playerCount"></div>
         </div>
@@ -66,11 +65,53 @@
         const socket = io();
         let roomCode = null;
         let playerId = null;
-        let currentPrompt = null;
+        let myPrompts = [];
         let playerGameOverInterval = null;
         let timerInterval = null;
 
         const STORAGE_KEY = 'quiplashPlayerInfo';
+        
+        function showNextPrompt() {
+            const nextPrompt = myPrompts.find(p => !p.submitted);
+            const currentPromptEl = document.getElementById('currentPrompt');
+            const answerInput = document.getElementById('answerInput');
+            const answerStatus = document.getElementById('answerStatus');
+            const submitBtn = document.querySelector('#answerScreen button');
+
+            if (nextPrompt) {
+                currentPromptEl.innerHTML = `<strong>Question:</strong> ${nextPrompt.text}`;
+                answerInput.value = '';
+                answerInput.disabled = false;
+                answerInput.style.display = 'block';
+                submitBtn.style.display = 'inline-block';
+                answerInput.focus();
+                answerStatus.textContent = `Prompts remaining: ${myPrompts.filter(p => !p.submitted).length}`;
+            } else {
+                currentPromptEl.innerHTML = 'All answers submitted! Waiting for other players...';
+                answerInput.style.display = 'none';
+                submitBtn.style.display = 'none';
+                answerStatus.textContent = '';
+            }
+        }
+
+        function submitAnswer() {
+            const answerInput = document.getElementById('answerInput');
+            const answer = answerInput.value;
+            if (!answer.trim()) return;
+
+            const nextPrompt = myPrompts.find(p => !p.submitted);
+            if (!nextPrompt) return;
+
+            socket.emit('submit-answer', {
+                roomCode,
+                playerId,
+                promptId: nextPrompt.promptId,
+                answer,
+            });
+
+            nextPrompt.submitted = true;
+            showNextPrompt();
+        }
 
         // Get room code from URL if present
         const urlParams = new URLSearchParams(window.location.search);
@@ -143,6 +184,14 @@
         socket.on('connect', () => {
             // Socket is back up; hide banner until we know if we need to rejoin
             document.getElementById('reconnectBanner').style.display = 'none';
+            
+            if (roomCode && document.getElementById('playerName').value) {
+                console.log('Attempting auto-reconnect...');
+                socket.emit('join-game', { 
+                    roomCode, 
+                    playerName: document.getElementById('playerName').value 
+                });
+            }
         });
 
         // Update players on all clients when someone joins
@@ -189,65 +238,42 @@
             document.getElementById('waitingRoom').style.display = 'none';
             document.getElementById('answerScreen').style.display = 'block';
 
-            // Find this player's prompt
-            const playerPrompt = data.prompts.find((p) => p.playerId === playerId);
-            if (playerPrompt) {
-                currentPrompt = playerPrompt;
-                document.getElementById('currentPrompt').innerHTML = `<strong>Question:</strong> ${playerPrompt.text}`;
-            }
+            // Find this player's prompts
+            myPrompts = data.prompts.filter((p) => p.playerId === playerId).map(p => ({...p, submitted: false}));
+            showNextPrompt();
         });
-
-        function submitAnswer() {
-            const answer = document.getElementById('answerInput').value;
-            if (!answer.trim()) return;
-
-            socket.emit('submit-answer', {
-                roomCode,
-                playerId,
-                promptId: currentPrompt.promptId,
-                answer,
-            });
-
-            document.getElementById('answerStatus').textContent =
-                'Answer submitted!';
-            document.getElementById('answerInput').disabled = true;
-        }
 
         socket.on('start-voting', (data) => {
             document.getElementById('answerScreen').style.display = 'none';
             document.getElementById('votingScreen').style.display = 'block';
+            document.getElementById('resultsScreen').style.display = 'none'; // Ensure results are hidden
 
             let html = '';
-            if (data.mode === 'pairs') {
-                // Show the question for this voting round between the heading and the buttons
-                if (data.pairs && data.pairs.length > 0) {
-                    document.getElementById('votingQuestion').textContent = data.pairs[0].promptText;
-                } else {
-                    document.getElementById('votingQuestion').textContent = '';
-                }
+            const match = data.match;
+            
+            // Display round progress (e.g., "Match 1 of 4")
+            const progressHtml = `<div style="text-align:center; font-size:0.9em; margin-bottom:10px; color:#666;">Match ${data.matchIndex + 1} of ${data.totalMatches}</div>`;
 
-                // Render pairs with individual voting
-                html = '';
-                data.pairs.forEach((pair) => {
-                    html += `
-                        <div style="margin-bottom:16px; text-align:center;">
-                            <div style="display:flex; align-items:center; justify-content:center; gap:12px;">
-                                <button class="vote-option" onclick="vote('${pair.player1.id}')">
-                                    <strong>${pair.player1.answer}</strong>
-                                </button>
-                                <span>VS</span>
-                                <button class="vote-option" onclick="vote('${pair.player2.id}')">
-                                    <strong>${pair.player2.answer}</strong>
-                                </button>
-                            </div>
+            if (data.mode === 'pairs') {
+                document.getElementById('votingQuestion').textContent = match.promptText;
+                
+                html = progressHtml + `
+                    <div style="margin-bottom:16px; text-align:center;">
+                        <div style="display:flex; align-items:center; justify-content:center; gap:12px;">
+                            <button class="vote-option" onclick="vote('${match.player1.id}')">
+                                <strong>${match.player1.answer}</strong>
+                            </button>
+                            <span>VS</span>
+                            <button class="vote-option" onclick="vote('${match.player2.id}')">
+                                <strong>${match.player2.answer}</strong>
+                            </button>
                         </div>
-                    `;
-                });
+                    </div>
+                `;
             } else if (data.mode === 'individual') {
                 document.getElementById('votingQuestion').textContent = 'Vote for the funniest answer!';
-                // Render all answers as radio buttons
-                html = '<form id="voteForm">';
-                data.answers.forEach((answer, index) => {
+                html = progressHtml + '<form id="voteForm">';
+                match.answers.forEach((answer) => {
                     html += `
                         <div class="vote-option-individual">
                             <label>
@@ -259,31 +285,34 @@
                 });
                 html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
             } else if (data.mode === 'thriples') {
-                // Show the question
-                if (data.thriples && data.thriples.length > 0) {
-                    document.getElementById('votingQuestion').textContent = data.thriples[0].promptText;
-                } else {
-                    document.getElementById('votingQuestion').textContent = '';
-                }
-                // Render thriples with radio buttons
-                html = '<form id="voteForm">';
-                data.thriples.forEach((triple) => {
-                    html += `<div style="margin-bottom:16px;">`;
-                    triple.answers.forEach((answer, idx) => {
-                        html += `
-                            <div class="vote-option-individual">
-                                <label>
-                                    <input type="radio" name="vote" value="${answer.id}">
-                                    ${idx + 1}. ${answer.answer}
-                                </label>
-                            </div>
-                        `;
-                    });
-                    html += `</div>`;
+                document.getElementById('votingQuestion').textContent = match.promptText;
+                html = progressHtml + '<form id="voteForm">';
+                match.answers.forEach((answer, idx) => {
+                    html += `
+                        <div class="vote-option-individual">
+                            <label>
+                                <input type="radio" name="vote" value="${answer.id}">
+                                ${idx + 1}. ${answer.answer}
+                            </label>
+                        </div>
+                    `;
                 });
                 html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
             }
             document.getElementById('voteOptions').innerHTML = html;
+        });
+
+        socket.on('match-results', (data) => {
+            // Show interim match results if needed, or just a "Waiting for next match..." message
+            // Ideally, we highlight the winner or show vote counts on the voting screen.
+            // For simplicity, let's just show a status message.
+            let winnerNames = [];
+            // We can't easily map IDs to names here without stored state, 
+            // but the server sends 'winners' array of IDs.
+            // Let's just say "Voting Complete!"
+            
+            document.getElementById('voteOptions').innerHTML = 
+                '<div style="text-align:center; margin-top:20px;"><h3>Voting Closed!</h3><p>Showing results on host screen...</p></div>';
         });
 
         function vote(voteId) {
@@ -344,9 +373,6 @@
             }
         }
 
-        function leaderStartGame() {
-            socket.emit('start-game', { roomCode });
-        }
 
         socket.on('tiebreaker-voting', (data) => {
             document.getElementById('resultsScreen').style.display = 'none';
@@ -385,6 +411,12 @@
                 html += '<h4>Tiebreaker Results:</h4>';
                 data.results.answers.forEach((ans) => {
                     html += `<p><strong>${ans.name}:</strong> "${ans.answer}" - ${ans.votes} tiebreaker votes ${ans.isWinner ? '(Winner!)' : ''}</p>`;
+                });
+                html += '<br>';
+            } else if (data.results.isFinal) {
+                html += '<h4>Final Round Rankings:</h4>';
+                data.results.answers.forEach((ans, idx) => {
+                    html += `<p><strong>${idx + 1}. ${ans.name}</strong>: "${ans.answer}" (${ans.votes} votes)</p>`;
                 });
                 html += '<br>';
             }
@@ -436,18 +468,9 @@
             document.getElementById('waitingRoom').style.display = 'none';
             document.getElementById('answerScreen').style.display = 'block';
 
-            // Reset answer input for the new round
-            const answerInput = document.getElementById('answerInput');
-            answerInput.value = '';
-            answerInput.disabled = false;
-            document.getElementById('answerStatus').textContent = '';
-
-            // Find this player's new prompt
-            const playerPrompt = data.prompts.find((p) => p.playerId === playerId);
-            if (playerPrompt) {
-                currentPrompt = playerPrompt;
-                document.getElementById('currentPrompt').innerHTML = `<strong>Question:</strong> ${playerPrompt.text}`;
-            }
+            // Reset prompts for the new round
+            myPrompts = data.prompts.filter((p) => p.playerId === playerId).map(p => ({...p, submitted: false}));
+            showNextPrompt();
         });
 
         function updateGameState(state) {
@@ -455,30 +478,15 @@
                 const waitingRoom = document.getElementById('waitingRoom');
                 const waitingHeader = document.getElementById('waitingHeader');
                 const waitingRuleText = document.getElementById('waitingRuleText');
-                const leaderBtn = document.getElementById('leaderStartBtn');
 
                 waitingRoom.style.display = 'block';
                 document.getElementById('playerCount').textContent =
                     `${state.players.length} players joined`;
 
-                const isLeader = state.leaderId === playerId;
-                const leaderName = state.leaderName || 'the first player';
-
-                if (isLeader) {
-                    waitingHeader.textContent = 'You are the leader.';
-                    waitingRuleText.innerHTML =
-                        'When at least <strong>2 players</strong> have joined, ' +
-                        'the host will start the game.';
-
-                    leaderBtn.style.display = 'none';
-                } else {
-                    waitingHeader.textContent = `Waiting for the host to start the game...`;
-                    waitingRuleText.innerHTML =
-                        'When at least <strong>2 players</strong> have joined, ' +
-                        'the host will start the game.';
-
-                    leaderBtn.style.display = 'none';
-                }
+                waitingHeader.textContent = 'Waiting for the host to start the game...';
+                waitingRuleText.innerHTML =
+                    'When at least <strong>2 players</strong> have joined, ' +
+                    'the host will start the game.';
             }
         }
     </script>
