@@ -1,62 +1,411 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Join Game - Multiplayer Party Game</title>
+    <title>TPR Vocabulary Game - Player</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Join a multiplayer party game. Enter room code and play fun voting games with friends.">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
-    <link rel="stylesheet" href="player.css">
+    <meta name="description" content="TPR Vocabulary Game - Learn vocabulary with images and challenges!">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            color: white;
+        }
+        
+        /* Join Screen */
+        #joinScreen {
+            background: rgba(255,255,255,0.95);
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 400px;
+            margin: 50px auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            color: #333;
+        }
+        #joinScreen h1 {
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+        #joinScreen input {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            text-align: center;
+        }
+        #joinScreen input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        #joinScreen button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        #joinScreen button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        /* Game Area */
+        #gameArea {
+            display: none;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        /* Game Container */
+        .game-container {
+            background: rgba(255,255,255,0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            color: #333;
+            margin-top: 20px;
+        }
+        
+        /* Score Display */
+        #scoreBoard {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+        
+        /* Progress Display */
+        #progressDisplay {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        
+        /* Timer Bar */
+        #timerBar {
+            width: 100%;
+            height: 12px;
+            background: #e0e0e0;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        #timerFill {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50, #8bc34a);
+            width: 100%;
+            transition: width 0.1s linear;
+            border-radius: 6px;
+        }
+        #timerFill.warning {
+            background: linear-gradient(90deg, #ff9800, #ffc107);
+        }
+        #timerFill.danger {
+            background: linear-gradient(90deg, #f44336, #ff5722);
+        }
+        
+        /* Image Display */
+        #imageArea {
+            margin-bottom: 20px;
+        }
+        #tprImage {
+            max-width: 100%;
+            max-height: 250px;
+            object-fit: contain;
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            background: white;
+        }
+        
+        /* Input Area (Main Loop) */
+        #inputArea {
+            display: none;
+        }
+        #userInput {
+            width: 100%;
+            padding: 15px;
+            font-size: 18px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        #userInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        #submitBtn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #4caf50 0%, #8bc34a 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        #submitBtn:hover {
+            transform: translateY(-2px);
+        }
+        
+        /* Options Area (Second/Third Loop) */
+        #optionsArea {
+            display: none;
+        }
+        .option-btn {
+            width: 100%;
+            padding: 15px;
+            margin: 8px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .option-btn:hover {
+            transform: translateY(-2px);
+        }
+        .option-btn.correct {
+            background: linear-gradient(135deg, #4caf50 0%, #8bc34a 100%);
+        }
+        .option-btn.incorrect {
+            background: linear-gradient(135deg, #f44336 0%, #ff5722 100%);
+        }
+        .option-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Feedback Message */
+        #feedbackMsg {
+            font-weight: bold;
+            margin-top: 15px;
+            min-height: 24px;
+            font-size: 18px;
+        }
+        #feedbackMsg.correct {
+            color: #4caf50;
+        }
+        #feedbackMsg.incorrect {
+            color: #f44336;
+        }
+        #feedbackMsg.info {
+            color: #667eea;
+        }
+        
+        /* Waiting Room */
+        #waitingRoom {
+            display: none;
+        }
+        #waitingRoom h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        /* Finished Screen */
+        #finishedScreen {
+            display: none;
+        }
+        #finishedScreen h2 {
+            color: #4caf50;
+            font-size: 28px;
+        }
+        #finalScore {
+            font-size: 48px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+        }
+        
+        /* Game Over Screen */
+        #gameOverScreen {
+            display: none;
+        }
+        #gameOverScreen h2 {
+            color: #667eea;
+            font-size: 28px;
+        }
+        .winner-name {
+            font-size: 36px;
+            color: #4caf50;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+        .final-scores {
+            text-align: left;
+            max-width: 300px;
+            margin: 0 auto;
+        }
+        .score-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .score-row.you {
+            background: #e8f5e9;
+            font-weight: bold;
+        }
+        
+        /* Reconnect Banner */
+        #reconnectBanner {
+            display: none;
+            background: #ff9800;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        #reconnectBanner button {
+            background: white;
+            color: #ff9800;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        /* Header with player name */
+        .player-header {
+            margin-bottom: 10px;
+        }
+        .player-header h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+        
+        /* Sound Toggle */
+        .sound-toggle {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 1000;
+        }
+        .sound-toggle.muted {
+            opacity: 0.5;
+        }
+        
+        /* Audio Unlock Banner */
+        #audioUnlockBanner {
+            display: none;
+            background: linear-gradient(135deg, #4caf50 0%, #8bc34a 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            text-align: center;
+            cursor: pointer;
+            animation: pulse 2s infinite;
+        }
+        #audioUnlockBanner:active {
+            transform: scale(0.98);
+        }
+    </style>
 </head>
 <body>
+    <!-- Join Screen -->
     <div id="joinScreen">
-        <h1>Join Game</h1>
-        <input type="text" id="roomCode" placeholder="Room Code" value="">
-        <input type="text" id="playerName" placeholder="Your Name">
+        <h1>📚 TPR Vocabulary</h1>
+        <input type="text" id="roomCode" placeholder="Room Code" maxlength="4" style="text-transform: uppercase;">
+        <input type="text" id="playerName" placeholder="Your Name" maxlength="20">
         <button onclick="joinGame()">Join Game</button>
-        <p id="joinError" style="color: red;"></p>
+        <p id="joinError" style="color: #f44336; margin-top: 10px;"></p>
     </div>
 
+    <!-- Sound Toggle Button -->
+    <button class="sound-toggle" id="soundToggle" onclick="toggleSound()" title="Toggle Sound">🔊</button>
+    
+    <!-- Game Area -->
     <div id="gameArea">
-        <h2>Hello, <span id="displayName"></span>!</h2>
-        <div id="reconnectBanner" style="display:none; text-align:center; margin-top:20px;">
-            <p style="margin-bottom:10px;">Connection lost. Tap to reconnect.</p>
-            <button id="reconnectButton" onclick="attemptReconnect()">Connect</button>
+        <div class="player-header">
+            <h2>👋 <span id="displayName"></span></h2>
         </div>
-        <div id="waitingRoom" style="display: none;">
-            <h3 id="waitingHeader">Waiting for the host to start the game...</h3>
-            <p id="waitingRuleText">
-                When at least <strong>2 players</strong> have joined, the host
-                will start the game.
-            </p>
-            <div id="playerCount"></div>
+        
+        <!-- Reconnect Banner -->
+        <div id="reconnectBanner">
+            <p style="margin: 0 0 10px 0;">Connection lost!</p>
+            <button onclick="attemptReconnect()">Reconnect</button>
         </div>
-
-        <div id="answerScreen" style="display: none;">
-            <div id="timerDisplay" class="timer-display" style="display: none;">
-                <div class="timer-bar">
-                    <div class="timer-fill" id="timerFill"></div>
-                </div>
-                <div class="timer-text" id="timerText">60</div>
+        
+        <!-- Audio Unlock Banner (for iOS) -->
+        <div id="audioUnlockBanner" onclick="unlockAudio()">
+            🔊 Tap here to enable sound!
+        </div>
+        
+        <!-- Waiting Room -->
+        <div id="waitingRoom" class="game-container">
+            <h3 id="waitingHeader">Waiting for the host to start...</h3>
+            <p id="waitingText">Get ready to learn some vocabulary! 🎯</p>
+            <div id="playerCount" style="margin-top: 15px; color: #666;"></div>
+        </div>
+        
+        <!-- Main Game Screen -->
+        <div id="gameScreen" class="game-container" style="display: none;">
+            <div id="scoreBoard">Score: <span id="scoreVal">0</span></div>
+            <div id="progressDisplay">Word <span id="wordIndex">1</span> of <span id="totalWords">10</span></div>
+            
+            <div id="timerBar">
+                <div id="timerFill"></div>
             </div>
-            <div class="prompt" id="currentPrompt" style="text-align: center; font-size: 1.3em; margin: 20px 0;"></div>
-            <input type="text" id="answerInput" placeholder="Your funny answer...">
-            <button onclick="submitAnswer()">Submit Answer</button>
-            <p id="answerStatus"></p>
+            
+            <div id="imageArea">
+                <img id="tprImage" src="" alt="Vocabulary Image">
+            </div>
+            
+            <!-- Text Input (Main Loop) -->
+            <div id="inputArea">
+                <input type="text" id="userInput" placeholder="Type the word..." autocomplete="off">
+                <button id="submitBtn" onclick="submitTypedAnswer()">Submit</button>
+            </div>
+            
+            <!-- Multiple Choice Options (Second/Third Loop) -->
+            <div id="optionsArea"></div>
+            
+            <div id="feedbackMsg"></div>
         </div>
-
-        <div id="votingScreen" style="display: none;">
-            <h3>Vote for the funniest!</h3>
-            <div id="votingQuestion" style="margin-top:8px; margin-bottom:12px; font-size:1.1em;"></div>
-            <div id="voteOptions"></div>
+        
+        <!-- Player Finished Screen -->
+        <div id="finishedScreen" class="game-container">
+            <h2>🎉 You Finished!</h2>
+            <div id="finalScore">0</div>
+            <p>points</p>
+            <p style="color: #666; margin-top: 20px;">Waiting for other players...</p>
         </div>
-
-        <div id="resultsScreen" style="display: none;">
-            <h3>Results!</h3>
-            <div id="results"></div>
-        </div>
-
-        <div id="playerGameOver" style="display:none; text-align:center; margin-top:100px; font-size:2.5em; font-weight:bold;">
-            GAME OVER!
+        
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="game-container">
+            <h2>🏆 Game Over!</h2>
+            <div id="winnerDisplay"></div>
+            <div id="allScores" class="final-scores"></div>
         </div>
     </div>
 
@@ -65,62 +414,52 @@
         const socket = io();
         let roomCode = null;
         let playerId = null;
-        let myPrompts = [];
-        let playerGameOverInterval = null;
+        let currentScore = 0;
         let timerInterval = null;
-
-        const STORAGE_KEY = 'quiplashPlayerInfo';
+        let timerDuration = 11000; // 11 seconds default
+        let inputLocked = false;
         
-        function showNextPrompt() {
-            const nextPrompt = myPrompts.find(p => !p.submitted);
-            const currentPromptEl = document.getElementById('currentPrompt');
-            const answerInput = document.getElementById('answerInput');
-            const answerStatus = document.getElementById('answerStatus');
-            const submitBtn = document.querySelector('#answerScreen button');
-
-            if (nextPrompt) {
-                currentPromptEl.innerHTML = `<strong>Question:</strong> ${nextPrompt.text}`;
-                answerInput.value = '';
-                answerInput.disabled = false;
-                answerInput.style.display = 'block';
-                submitBtn.style.display = 'inline-block';
-                answerInput.focus();
-                answerStatus.textContent = `Prompts remaining: ${myPrompts.filter(p => !p.submitted).length}`;
-            } else {
-                currentPromptEl.innerHTML = 'All answers submitted! Waiting for other players...';
-                answerInput.style.display = 'none';
-                submitBtn.style.display = 'none';
-                answerStatus.textContent = '';
-            }
-        }
-
-        function submitAnswer() {
-            const answerInput = document.getElementById('answerInput');
-            const answer = answerInput.value;
-            if (!answer.trim()) return;
-
-            const nextPrompt = myPrompts.find(p => !p.submitted);
-            if (!nextPrompt) return;
-
-            socket.emit('submit-answer', {
-                roomCode,
-                playerId,
-                promptId: nextPrompt.promptId,
-                answer,
-            });
-
-            nextPrompt.submitted = true;
-            showNextPrompt();
-        }
-
+        // Audio state
+        let soundEnabled = true;
+        let audioUnlocked = false;
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        
+        const STORAGE_KEY = 'tprPlayerInfo';
+        
+        // =====================================================================
+        // DOM Elements
+        // =====================================================================
+        const joinScreen = document.getElementById('joinScreen');
+        const gameArea = document.getElementById('gameArea');
+        const waitingRoom = document.getElementById('waitingRoom');
+        const gameScreen = document.getElementById('gameScreen');
+        const finishedScreen = document.getElementById('finishedScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const reconnectBanner = document.getElementById('reconnectBanner');
+        
+        const scoreVal = document.getElementById('scoreVal');
+        const wordIndex = document.getElementById('wordIndex');
+        const totalWords = document.getElementById('totalWords');
+        const timerFill = document.getElementById('timerFill');
+        const tprImage = document.getElementById('tprImage');
+        const inputArea = document.getElementById('inputArea');
+        const optionsArea = document.getElementById('optionsArea');
+        const userInput = document.getElementById('userInput');
+        const feedbackMsg = document.getElementById('feedbackMsg');
+        
+        // =====================================================================
+        // Initialization
+        // =====================================================================
+        
         // Get room code from URL if present
         const urlParams = new URLSearchParams(window.location.search);
         const urlRoomCode = urlParams.get('room');
         if (urlRoomCode) {
             document.getElementById('roomCode').value = urlRoomCode.toUpperCase();
         }
-
-        // Pre-fill from local storage if available
+        
+        // Pre-fill from local storage
         try {
             const stored = localStorage.getItem(STORAGE_KEY);
             if (stored && !urlRoomCode) {
@@ -132,446 +471,532 @@
                     document.getElementById('playerName').value = parsed.playerName;
                 }
             }
-        } catch (e) {
-            // ignore storage errors
-        }
-
+        } catch (e) {}
+        
+        // =====================================================================
+        // Join Game
+        // =====================================================================
+        
         function joinGame() {
             roomCode = document.getElementById('roomCode').value.toUpperCase();
-            const playerName = document.getElementById('playerName').value;
-
+            const playerName = document.getElementById('playerName').value.trim();
+            
             if (!roomCode || !playerName) {
-                document.getElementById('joinError').textContent =
-                    'Please enter both room code and name';
+                document.getElementById('joinError').textContent = 'Please enter both room code and name';
                 return;
             }
-
-            // Store info for later reconnection
+            
+            // Try to unlock audio on this user gesture (important for iOS)
+            if ('speechSynthesis' in window && !audioUnlocked) {
+                const utterance = new SpeechSynthesisUtterance('');
+                utterance.volume = 0;
+                speechSynthesis.speak(utterance);
+                audioUnlocked = true;
+            }
+            
+            // Store for reconnection
             try {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify({ roomCode, playerName }));
-            } catch (e) {
-                // ignore storage errors
-            }
-
+            } catch (e) {}
+            
             socket.emit('join-game', { roomCode, playerName });
         }
-
+        
+        // Enter key to join
+        document.getElementById('roomCode').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('playerName').focus();
+        });
+        document.getElementById('playerName').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') joinGame();
+        });
+        
+        // =====================================================================
+        // Socket Event Handlers
+        // =====================================================================
+        
         socket.on('joined-game', (data) => {
             playerId = data.playerId;
-
-            // Hide reconnect banner on successful join
-            document.getElementById('reconnectBanner').style.display = 'none';
-
-            document.getElementById('joinScreen').style.display = 'none';
-            document.getElementById('gameArea').style.display = 'block';
-            document.getElementById('displayName').textContent =
-                document.getElementById('playerName').value;
-
+            reconnectBanner.style.display = 'none';
+            
+            joinScreen.style.display = 'none';
+            gameArea.style.display = 'block';
+            document.getElementById('displayName').textContent = document.getElementById('playerName').value;
+            
+            // Check if we need to show audio unlock (iOS)
+            checkAudioUnlock();
+            
             updateGameState(data.gameState);
         });
-
+        
         socket.on('error', (data) => {
             document.getElementById('joinError').textContent = data.message;
             
-            // If the game is not found, clear the saved session so we don't keep retrying
             if (data.message === 'Game not found' || data.message === 'Game is full') {
-                 localStorage.removeItem(STORAGE_KEY);
-                 // Also clear the URL param if possible to avoid user confusion upon refresh
-                 const url = new URL(window.location);
-                 if (url.searchParams.has('room')) {
-                     url.searchParams.delete('room');
-                     window.history.replaceState({}, document.title, url);
-                 }
+                localStorage.removeItem(STORAGE_KEY);
+                const url = new URL(window.location);
+                if (url.searchParams.has('room')) {
+                    url.searchParams.delete('room');
+                    window.history.replaceState({}, document.title, url);
+                }
             }
         });
-
-        // Show reconnect prompt when socket disconnects after joining
+        
         socket.on('disconnect', () => {
-            if (document.getElementById('gameArea').style.display === 'block') {
-                document.getElementById('reconnectBanner').style.display = 'block';
+            if (gameArea.style.display === 'block') {
+                reconnectBanner.style.display = 'block';
             }
         });
-
+        
         socket.on('connect', () => {
-            // Socket is back up; hide banner until we know if we need to rejoin
-            document.getElementById('reconnectBanner').style.display = 'none';
+            reconnectBanner.style.display = 'none';
             
             if (roomCode && document.getElementById('playerName').value) {
-                console.log('Attempting auto-reconnect...');
-                socket.emit('join-game', { 
-                    roomCode, 
-                    playerName: document.getElementById('playerName').value 
+                socket.emit('join-game', {
+                    roomCode,
+                    playerName: document.getElementById('playerName').value
                 });
             }
         });
-
-        // Update players on all clients when someone joins
+        
         socket.on('player-joined', (data) => {
             updateGameState(data.gameState);
         });
-
-        // Timer handling
-        socket.on('timer-start', (data) => {
-            startTimerDisplay(data.phase, data.duration);
-        });
-
-        function startTimerDisplay(phase, duration) {
-            clearInterval(timerInterval);
-            const timerDisplay = document.getElementById('timerDisplay');
-            const timerFill = document.getElementById('timerFill');
-            const timerText = document.getElementById('timerText');
-
-            if (phase === 'answer' || phase === 'vote') {
-                timerDisplay.style.display = 'block';
-            } else {
-                timerDisplay.style.display = 'none';
-                return;
-            }
-
-            let timeLeft = duration;
-            timerText.textContent = timeLeft;
-            timerFill.style.width = '100%';
-
-            timerInterval = setInterval(() => {
-                timeLeft--;
-                const percentage = (timeLeft / duration) * 100;
-                timerFill.style.width = percentage + '%';
-                timerText.textContent = timeLeft;
-
-                if (timeLeft <= 0) {
-                    clearInterval(timerInterval);
-                    timerDisplay.style.display = 'none';
-                }
-            }, 1000);
-        }
-
+        
+        // =====================================================================
+        // Game Started
+        // =====================================================================
+        
         socket.on('game-started', (data) => {
-            document.getElementById('waitingRoom').style.display = 'none';
-            document.getElementById('answerScreen').style.display = 'block';
-
-            // Find this player's prompts
-            myPrompts = data.prompts.filter((p) => p.playerId === playerId).map(p => ({...p, submitted: false}));
-            showNextPrompt();
-        });
-
-        socket.on('start-voting', (data) => {
-            document.getElementById('answerScreen').style.display = 'none';
-            document.getElementById('votingScreen').style.display = 'block';
-            document.getElementById('resultsScreen').style.display = 'none'; // Ensure results are hidden
-
-            let html = '';
-            const match = data.match;
+            timerDuration = data.maxTime || 11000;
+            totalWords.textContent = data.vocabularyCount;
             
-            // Display round progress (e.g., "Match 1 of 4")
-            const progressHtml = `<div style="text-align:center; font-size:0.9em; margin-bottom:10px; color:#666;">Match ${data.matchIndex + 1} of ${data.totalMatches}</div>`;
-
-            if (data.mode === 'pairs') {
-                document.getElementById('votingQuestion').textContent = match.promptText;
+            waitingRoom.style.display = 'none';
+            gameScreen.style.display = 'block';
+        });
+        
+        // =====================================================================
+        // Timer
+        // =====================================================================
+        
+        socket.on('timer-start', (data) => {
+            startTimerDisplay(data.duration);
+        });
+        
+        function startTimerDisplay(duration) {
+            clearInterval(timerInterval);
+            
+            const durationMs = duration;
+            let startTime = Date.now();
+            
+            timerFill.style.width = '100%';
+            timerFill.className = '';
+            
+            timerInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const remaining = Math.max(0, durationMs - elapsed);
+                const pct = (remaining / durationMs) * 100;
                 
-                html = progressHtml + `
-                    <div style="margin-bottom:16px; text-align:center;">
-                        <div style="display:flex; align-items:center; justify-content:center; gap:12px;">
-                            <button class="vote-option" onclick="vote('${match.player1.id}')">
-                                <strong>${match.player1.answer}</strong>
-                            </button>
-                            <span>VS</span>
-                            <button class="vote-option" onclick="vote('${match.player2.id}')">
-                                <strong>${match.player2.answer}</strong>
-                            </button>
-                        </div>
-                    </div>
-                `;
-            } else if (data.mode === 'individual') {
-                document.getElementById('votingQuestion').textContent = 'Vote for the funniest answer!';
-                html = progressHtml + '<form id="voteForm">';
-                match.answers.forEach((answer) => {
-                    html += `
-                        <div class="vote-option-individual">
-                            <label>
-                                <input type="radio" name="vote" value="${answer.playerId}">
-                                ${answer.answer}
-                            </label>
-                        </div>
-                    `;
-                });
-                html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
-            } else if (data.mode === 'thriples') {
-                document.getElementById('votingQuestion').textContent = match.promptText;
-                html = progressHtml + '<form id="voteForm">';
-                match.answers.forEach((answer, idx) => {
-                    html += `
-                        <div class="vote-option-individual">
-                            <label>
-                                <input type="radio" name="vote" value="${answer.id}">
-                                ${idx + 1}. ${answer.answer}
-                            </label>
-                        </div>
-                    `;
-                });
-                html += '<button type="button" onclick="submitIndividualVote()" class="submit-vote-btn">Submit Vote</button></form>';
-            } else if (data.mode === 'medals') {
-                document.getElementById('votingQuestion').textContent = data.match.promptText || 'Final Round!';
-                html = progressHtml + `
-                    <div style="margin-bottom:10px; text-align:center; color: #fff;">
-                        <strong>Distribute 3 Medals!</strong><br>
-                        Remaining: <span id="medalsRemaining">3</span>
-                    </div>
-                    <form id="medalsForm">
-                `;
-                // Reset counts for new round
-                for (const k in medalCounts) delete medalCounts[k];
-
-                data.match.answers.forEach((answer) => {
-                    const ansId = answer.playerId || answer.id;
-                    html += `
-                        <div class="vote-option-individual" style="display:flex; justify-content:space-between; align-items:center; padding:10px;">
-                            <div style="text-align:left; flex-grow:1; margin-right:10px; color: white; font-weight:bold;">${answer.answer}</div>
-                            <div style="display:flex; align-items:center; gap:5px;">
-                                <button type="button" onclick="adjustMedals('${ansId}', -1)" style="width:30px; height:30px; border-radius:50%; border:none; background:#ff6b6b; color:white; font-weight:bold; cursor:pointer;">-</button>
-                                <span id="count-${ansId}" style="color:white; font-weight:bold; width:20px; text-align:center;">0</span>
-                                <button type="button" onclick="adjustMedals('${ansId}', 1)" style="width:30px; height:30px; border-radius:50%; border:none; background:#4ecdc4; color:white; font-weight:bold; cursor:pointer;">+</button>
-                            </div>
-                        </div>
-                    `;
-                });
+                timerFill.style.width = pct + '%';
                 
-                html += `
-                    </form>
-                    <button type="button" onclick="submitMedalsVote()" class="submit-vote-btn" style="margin-top:20px; width:100%;">Submit Votes</button>
-                `;
-            }
-            document.getElementById('voteOptions').innerHTML = html;
-        });
-
-        socket.on('match-results', (data) => {
-            // Show interim match results if needed, or just a "Waiting for next match..." message
-            // Ideally, we highlight the winner or show vote counts on the voting screen.
-            // For simplicity, let's just show a status message.
-            let winnerNames = [];
-            // We can't easily map IDs to names here without stored state, 
-            // but the server sends 'winners' array of IDs.
-            // Let's just say "Voting Complete!"
-            
-            document.getElementById('voteOptions').innerHTML = 
-                '<div style="text-align:center; margin-top:20px;"><h3>Voting Closed!</h3><p>Showing results on host screen...</p></div>';
-        });
-
-        const medalCounts = {};
-
-        function adjustMedals(id, delta) {
-            const currentTotal = Object.values(medalCounts).reduce((a,b)=>a+b, 0);
-            const currentCount = medalCounts[id] || 0;
-            
-            if (delta > 0) {
-                if (currentTotal < 3) {
-                    medalCounts[id] = currentCount + 1;
+                // Color changes
+                if (pct < 20) {
+                    timerFill.className = 'danger';
+                } else if (pct < 40) {
+                    timerFill.className = 'warning';
+                } else {
+                    timerFill.className = '';
                 }
-            } else {
-                if (currentCount > 0) {
-                    medalCounts[id] = currentCount - 1;
+                
+                if (remaining <= 0) {
+                    clearInterval(timerInterval);
                 }
-            }
-            
-            // Update UI
-            const el = document.getElementById(`count-${id}`);
-            if (el) el.textContent = medalCounts[id] || 0;
-            const remEl = document.getElementById('medalsRemaining');
-            const newTotal = Object.values(medalCounts).reduce((a,b)=>a+b, 0);
-            if (remEl) remEl.textContent = (3 - newTotal);
+            }, 50);
         }
         
-        function submitMedalsVote() {
-            const currentTotal = Object.values(medalCounts).reduce((a,b)=>a+b, 0);
-            if (currentTotal !== 3) {
-                alert('Please distribute exactly 3 medals.');
-                return;
+        function stopTimer() {
+            clearInterval(timerInterval);
+        }
+        
+        // =====================================================================
+        // Main Loop (Type the Word)
+        // =====================================================================
+        
+        socket.on('main-loop-start', (data) => {
+            inputLocked = false;
+            
+            // Update progress
+            wordIndex.textContent = data.wordIndex;
+            totalWords.textContent = data.totalWords;
+            
+            // Show image
+            tprImage.src = data.image;
+            
+            // Show input, hide options
+            inputArea.style.display = 'block';
+            optionsArea.style.display = 'none';
+            
+            // Clear and focus input
+            userInput.value = '';
+            userInput.disabled = false;
+            userInput.focus();
+            
+            feedbackMsg.textContent = '';
+            feedbackMsg.className = '';
+        });
+        
+        function submitTypedAnswer() {
+            if (inputLocked) return;
+            
+            const answer = userInput.value.trim();
+            if (!answer) return;
+            
+            inputLocked = true;
+            userInput.disabled = true;
+            
+            socket.emit('submit-answer', {
+                roomCode,
+                playerId,
+                answer
+            });
+        }
+        
+        // Enter key to submit
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitTypedAnswer();
+        });
+        
+        // =====================================================================
+        // Second Loop (4 Multiple Choice)
+        // =====================================================================
+        
+        socket.on('second-loop-start', (data) => {
+            inputLocked = false;
+            
+            // Show image
+            tprImage.src = data.image;
+            
+            // Hide input, show options
+            inputArea.style.display = 'none';
+            optionsArea.style.display = 'block';
+            
+            // Create option buttons
+            let html = '';
+            data.options.forEach((opt) => {
+                html += `<button class="option-btn" onclick="submitChoice('${opt.id}')" data-id="${opt.id}">${opt.index}. ${opt.word}</button>`;
+            });
+            optionsArea.innerHTML = html;
+            
+            feedbackMsg.textContent = data.message;
+            feedbackMsg.className = 'info';
+        });
+        
+        // =====================================================================
+        // Third Loop (2 Binary Choice)
+        // =====================================================================
+        
+        socket.on('third-loop-start', (data) => {
+            inputLocked = false;
+            
+            // Show image
+            tprImage.src = data.image;
+            
+            // Hide input, show options
+            inputArea.style.display = 'none';
+            optionsArea.style.display = 'block';
+            
+            // Create option buttons
+            let html = '';
+            data.options.forEach((opt) => {
+                html += `<button class="option-btn" onclick="submitChoice('${opt.id}')" data-id="${opt.id}">${opt.index}. ${opt.word}</button>`;
+            });
+            optionsArea.innerHTML = html;
+            
+            feedbackMsg.textContent = data.message;
+            feedbackMsg.className = 'info';
+        });
+        
+        function submitChoice(selectedId) {
+            if (inputLocked) return;
+            
+            inputLocked = true;
+            
+            // Disable all buttons
+            document.querySelectorAll('.option-btn').forEach(btn => {
+                btn.disabled = true;
+            });
+            
+            socket.emit('submit-choice', {
+                roomCode,
+                playerId,
+                selectedId
+            });
+        }
+        
+        // =====================================================================
+        // Answer Results / Feedback
+        // =====================================================================
+        
+        socket.on('answer-result', (data) => {
+            stopTimer();
+            
+            if (data.correct) {
+                currentScore = currentScore + data.points;
+                scoreVal.textContent = currentScore;
+                
+                feedbackMsg.textContent = `${data.message} +${data.points} pts`;
+                feedbackMsg.className = 'correct';
+                
+                // Play pronunciation using browser TTS
+                if (data.word) {
+                    playAudio(data.word);
+                }
+                
+                // Highlight correct button if in options mode
+                if (optionsArea.style.display === 'block') {
+                    // All buttons should be neutral/green for correct
+                }
+            } else {
+                feedbackMsg.textContent = data.message;
+                feedbackMsg.className = 'incorrect';
+                
+                // Highlight the wrong selection
+                if (data.selectedId) {
+                    const wrongBtn = document.querySelector(`.option-btn[data-id="${data.selectedId}"]`);
+                    if (wrongBtn) {
+                        wrongBtn.classList.add('incorrect');
+                    }
+                }
+            }
+        });
+        
+        socket.on('timeout', (data) => {
+            stopTimer();
+            feedbackMsg.textContent = data.message;
+            feedbackMsg.className = 'incorrect';
+        });
+        
+        socket.on('word-skipped', (data) => {
+            feedbackMsg.textContent = data.message;
+            feedbackMsg.className = 'info';
+        });
+        
+        // =====================================================================
+        // Audio Pronunciation (iOS Compatible)
+        // =====================================================================
+        
+        function playAudio(text) {
+            if (!soundEnabled || !audioUnlocked) return;
+            
+            if ('speechSynthesis' in window) {
+                // Cancel any ongoing speech
+                speechSynthesis.cancel();
+                
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'en-US';
+                utterance.rate = 0.9;
+                utterance.volume = 1.0;
+                
+                // iOS fix: need to use getVoices
+                const voices = speechSynthesis.getVoices();
+                const englishVoice = voices.find(v => v.lang.startsWith('en'));
+                if (englishVoice) {
+                    utterance.voice = englishVoice;
+                }
+                
+                speechSynthesis.speak(utterance);
+            }
+        }
+        
+        // Unlock audio on iOS (must be called from user gesture)
+        function unlockAudio() {
+            if ('speechSynthesis' in window) {
+                // Speak a silent/short utterance to unlock
+                const utterance = new SpeechSynthesisUtterance('');
+                utterance.volume = 0;
+                speechSynthesis.speak(utterance);
+                
+                // Also try speaking a real word quietly
+                setTimeout(() => {
+                    const testUtterance = new SpeechSynthesisUtterance('Ready');
+                    testUtterance.volume = 0.3;
+                    testUtterance.rate = 1.5;
+                    testUtterance.lang = 'en-US';
+                    speechSynthesis.speak(testUtterance);
+                }, 100);
             }
             
-            // Construct array of voteIds
-            const votes = [];
-            for (const [id, count] of Object.entries(medalCounts)) {
-                for(let i=0; i<count; i++) votes.push(id);
+            audioUnlocked = true;
+            document.getElementById('audioUnlockBanner').style.display = 'none';
+            document.getElementById('soundToggle').classList.remove('muted');
+            
+            // Save preference
+            try {
+                localStorage.setItem('audioUnlocked', 'true');
+            } catch(e) {}
+        }
+        
+        // Toggle sound on/off
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const btn = document.getElementById('soundToggle');
+            
+            if (soundEnabled) {
+                btn.textContent = '🔊';
+                btn.classList.remove('muted');
+                // If not unlocked yet on iOS, show the banner
+                if (!audioUnlocked && isIOS) {
+                    document.getElementById('audioUnlockBanner').style.display = 'block';
+                }
+            } else {
+                btn.textContent = '🔇';
+                btn.classList.add('muted');
             }
             
-            socket.emit('submit-vote', { roomCode, playerId, voteId: votes });
-            document.getElementById('voteOptions').innerHTML = '<p>Votes submitted! Waiting for others...</p>';
+            // Save preference
+            try {
+                localStorage.setItem('soundEnabled', soundEnabled ? 'true' : 'false');
+            } catch(e) {}
+        }
+        
+        // Check if we need to show audio unlock banner (iOS)
+        function checkAudioUnlock() {
+            // Load saved preferences
+            try {
+                const savedSound = localStorage.getItem('soundEnabled');
+                if (savedSound === 'false') {
+                    soundEnabled = false;
+                    document.getElementById('soundToggle').textContent = '🔇';
+                    document.getElementById('soundToggle').classList.add('muted');
+                }
+                
+                const savedUnlock = localStorage.getItem('audioUnlocked');
+                if (savedUnlock === 'true') {
+                    audioUnlocked = true;
+                }
+            } catch(e) {}
             
-            // Clear for next time
-            for (const k in medalCounts) delete medalCounts[k];
-        }
-
-        function vote(voteId) {
-            socket.emit('submit-vote', { roomCode, playerId, voteId });
-            document.getElementById('voteOptions').innerHTML =
-                '<p>Vote submitted! Waiting for others...</p>';
-        }
-
-        function submitIndividualVote() {
-            const selected = document.querySelector('input[name="vote"]:checked');
-            if (!selected) {
-                alert('Please select an answer to vote for.');
-                return;
+            // Show unlock banner on iOS if not already unlocked
+            if (isIOS && !audioUnlocked && soundEnabled) {
+                document.getElementById('audioUnlockBanner').style.display = 'block';
             }
-            const voteId = selected.value;
-            socket.emit('submit-vote', { roomCode, playerId, voteId });
-            document.getElementById('voteOptions').innerHTML =
-                '<p>Vote submitted! Waiting for others...</p>';
-        }
-
-        function submitTiebreakerVote() {
-            const selected = document.querySelector('input[name="tiebreakerVote"]:checked');
-            if (!selected) {
-                alert('Please select an answer to vote for in the tiebreaker.');
-                return;
+            
+            // Pre-load voices (needed for iOS)
+            if ('speechSynthesis' in window) {
+                speechSynthesis.getVoices();
+                // iOS needs this event listener
+                speechSynthesis.onvoiceschanged = () => {
+                    speechSynthesis.getVoices();
+                };
             }
-            const voteId = selected.value;
-            socket.emit('submit-vote', { roomCode, playerId, voteId });
-            document.getElementById('voteOptions').innerHTML =
-                '<p>Tiebreaker vote submitted! Waiting for others...</p>';
         }
-
+        
+        // =====================================================================
+        // Player Finished
+        // =====================================================================
+        
+        socket.on('player-finished', (data) => {
+            stopTimer();
+            
+            gameScreen.style.display = 'none';
+            finishedScreen.style.display = 'block';
+            
+            document.getElementById('finalScore').textContent = data.score;
+        });
+        
+        // =====================================================================
+        // Game Over
+        // =====================================================================
+        
+        socket.on('game-over', (data) => {
+            stopTimer();
+            
+            gameScreen.style.display = 'none';
+            finishedScreen.style.display = 'none';
+            gameOverScreen.style.display = 'block';
+            
+            // Show winner
+            const winnerDisplay = document.getElementById('winnerDisplay');
+            if (data.winner) {
+                const isMe = data.winner.id === playerId;
+                winnerDisplay.innerHTML = `
+                    <p style="color: #666;">Winner</p>
+                    <div class="winner-name">${isMe ? '🎉 YOU! 🎉' : data.winner.name}</div>
+                    <p style="color: #667eea; font-size: 24px;">${data.winner.score} points</p>
+                `;
+            }
+            
+            // Show all scores
+            const allScores = document.getElementById('allScores');
+            let scoresHtml = '<h4 style="margin: 20px 0 10px 0; color: #666;">Final Standings</h4>';
+            data.finalScores.forEach((player, idx) => {
+                const isMe = player.id === playerId;
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '';
+                scoresHtml += `
+                    <div class="score-row ${isMe ? 'you' : ''}">
+                        <span>${medal} ${player.name}</span>
+                        <span>${player.score} pts</span>
+                    </div>
+                `;
+            });
+            allScores.innerHTML = scoresHtml;
+        });
+        
+        // =====================================================================
+        // Progress Updates (for display)
+        // =====================================================================
+        
+        socket.on('progress-update', (data) => {
+            // Could show other players' progress if needed
+            // For now, we just use our own state
+        });
+        
+        // =====================================================================
+        // Reconnection
+        // =====================================================================
+        
         function attemptReconnect() {
             try {
                 const stored = localStorage.getItem(STORAGE_KEY);
                 if (!stored) {
-                    document.getElementById('joinError').textContent =
-                        'No saved connection info found.';
+                    document.getElementById('joinError').textContent = 'No saved connection info.';
                     return;
                 }
                 const parsed = JSON.parse(stored);
                 if (!parsed.roomCode || !parsed.playerName) {
-                    document.getElementById('joinError').textContent =
-                        'Saved connection info is incomplete.';
+                    document.getElementById('joinError').textContent = 'Saved info incomplete.';
                     return;
                 }
+                
                 roomCode = parsed.roomCode.toUpperCase();
                 document.getElementById('roomCode').value = roomCode;
                 document.getElementById('playerName').value = parsed.playerName;
-
+                
                 socket.emit('join-game', {
                     roomCode,
-                    playerName: parsed.playerName,
+                    playerName: parsed.playerName
                 });
             } catch (e) {
-                document.getElementById('joinError').textContent =
-                    'Could not load saved connection info.';
+                document.getElementById('joinError').textContent = 'Could not reconnect.';
             }
         }
-
-
-        socket.on('tiebreaker-voting', (data) => {
-            document.getElementById('resultsScreen').style.display = 'none';
-            document.getElementById('votingScreen').style.display = 'block';
-
-            document.getElementById('votingQuestion').textContent = 'Tiebreaker! Vote for the funniest among the tied answers!';
-
-            let html = '<form id="tiebreakerForm">';
-            const canVote = data.allowedVoters.includes(playerId);
-            if (!canVote) {
-                html += '<p style="color: red;">You are not in the tiebreaker. Please wait...</p>';
-            }
-            data.tiedAnswers.forEach((answer, index) => {
-                html += `
-                    <div style="margin-bottom:12px; text-align:left; border:1px solid #ccc; padding:8px; border-radius:8px;">
-                        <label style="display:block; cursor:${canVote ? 'pointer' : 'not-allowed'};">
-                            <input type="radio" name="tiebreakerVote" value="${answer.playerId}" ${canVote ? '' : 'disabled'} style="margin-right:8px;">
-                            <strong>${answer.name}:</strong> ${answer.answer} (had ${answer.previousVotes} votes)
-                        </label>
-                    </div>
-                `;
-            });
-            if (canVote) {
-                html += '<button type="button" onclick="submitTiebreakerVote()" style="margin-top:16px; padding:10px 20px;">Submit Tiebreaker Vote</button>';
-            }
-            html += '</form>';
-            document.getElementById('voteOptions').innerHTML = html;
-        });
-
-        socket.on('show-results', (data) => {
-            document.getElementById('votingScreen').style.display = 'none';
-            document.getElementById('resultsScreen').style.display = 'block';
-
-            let html = '';
-            if (data.results.wasTiebreaker) {
-                html += '<h4>Tiebreaker Results:</h4>';
-                data.results.answers.forEach((ans) => {
-                    html += `<p><strong>${ans.name}:</strong> "${ans.answer}" - ${ans.votes} tiebreaker votes ${ans.isWinner ? '(Winner!)' : ''}</p>`;
-                });
-                html += '<br>';
-            } else if (data.results.isFinal) {
-                html += '<h4>Final Round Rankings:</h4>';
-                data.results.answers.forEach((ans, idx) => {
-                    html += `<p><strong>${idx + 1}. ${ans.name}</strong>: "${ans.answer}" (${ans.votes} votes)</p>`;
-                });
-                html += '<br>';
-            }
-            html += '<h4>Scores:</h4>';
-            data.results.scores.forEach((score) => {
-                const isYou = score.id === playerId;
-                html += `<p${isYou ? ' style=\"font-weight:bold;\"' : ''}>
-                    ${score.name}: ${score.score} points
-                </p>`;
-            });
-            document.getElementById('results').innerHTML = html;
-        });
-
-        // GAME OVER on player screen
-        socket.on('game-over', (data) => {
-            // Hide all gameplay sections
-            document.getElementById('waitingRoom').style.display = 'none';
-            document.getElementById('answerScreen').style.display = 'none';
-            document.getElementById('votingScreen').style.display = 'none';
-            document.getElementById('resultsScreen').style.display = 'none';
-
-            const over = document.getElementById('playerGameOver');
-            over.style.display = 'block';
-            over.style.visibility = 'visible';
-
-            if (playerGameOverInterval) {
-                clearInterval(playerGameOverInterval);
-            }
-            playerGameOverInterval = setInterval(() => {
-                over.style.visibility =
-                    over.style.visibility === 'hidden' ? 'visible' : 'hidden';
-            }, 500);
-        });
-
-        // Intermission between rounds
-        socket.on('intermission', (data) => {
-            // Hide results, show intermission
-            document.getElementById('resultsScreen').style.display = 'none';
-            document.getElementById('votingScreen').style.display = 'none';
-            document.getElementById('waitingRoom').style.display = 'block';
-
-            document.getElementById('waitingHeader').textContent = `Intermission - Round ${data.round} of ${data.maxRounds}`;
-            document.getElementById('waitingRuleText').innerHTML = 'Get ready for the next round! ⏰';
-        });
-
-        // Start of answering phase after intermission
-        socket.on('start-answering', (data) => {
-            // Hide intermission, show answer screen
-            document.getElementById('waitingRoom').style.display = 'none';
-            document.getElementById('answerScreen').style.display = 'block';
-
-            // Reset prompts for the new round
-            myPrompts = data.prompts.filter((p) => p.playerId === playerId).map(p => ({...p, submitted: false}));
-            showNextPrompt();
-        });
-
+        
+        // =====================================================================
+        // Update Game State
+        // =====================================================================
+        
         function updateGameState(state) {
             if (state.state === 'waiting') {
-                const waitingRoom = document.getElementById('waitingRoom');
-                const waitingHeader = document.getElementById('waitingHeader');
-                const waitingRuleText = document.getElementById('waitingRuleText');
-
                 waitingRoom.style.display = 'block';
-                document.getElementById('playerCount').textContent =
-                    `${state.players.length} players joined`;
-
-                waitingHeader.textContent = 'Waiting for the host to start the game...';
-                waitingRuleText.innerHTML =
-                    'When at least <strong>2 players</strong> have joined, ' +
-                    'the host will start the game.';
+                gameScreen.style.display = 'none';
+                finishedScreen.style.display = 'none';
+                gameOverScreen.style.display = 'none';
+                
+                document.getElementById('playerCount').textContent = `${state.players.length} player(s) joined`;
+            } else if (state.state === 'playing') {
+                waitingRoom.style.display = 'none';
+                gameScreen.style.display = 'block';
+            } else if (state.state === 'results' || state.state === 'finished') {
+                // Game over state handled by game-over event
             }
         }
     </script>

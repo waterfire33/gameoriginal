@@ -1,207 +1,879 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Game Host - Multiplayer Party Game</title>
-    <meta name="description" content="Host a multiplayer party game. Create rooms and manage players for fun voting games.">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
-    <link rel="stylesheet" href="host.css">
+    <title>TPR Vocabulary Game - Host</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Host a TPR Vocabulary Game session for your class or group.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            color: #eee;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        h1 span {
+            font-size: 0.5em;
+            color: #888;
+        }
+        
+        /* Create Game Screen */
+        #createGame {
+            max-width: 500px;
+            margin: 30px auto;
+            background: rgba(255,255,255,0.05);
+            padding: 30px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        #createGame h2 {
+            margin-top: 0;
+            color: #667eea;
+            text-align: center;
+        }
+        #createGame input, #createGame select {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 16px;
+        }
+        #createGame input::placeholder {
+            color: rgba(255,255,255,0.5);
+        }
+        #createGame label {
+            display: block;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 14px;
+        }
+        #createGame button {
+            width: 100%;
+            padding: 15px;
+            margin-top: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        #createGame button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        /* Game Lobby */
+        #gameLobby {
+            display: none;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .lobby-header {
+            text-align: center;
+            background: rgba(255,255,255,0.05);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        .room-code {
+            font-size: 4em;
+            font-weight: bold;
+            color: #667eea;
+            letter-spacing: 10px;
+            margin: 10px 0;
+        }
+        .join-url {
+            color: #4ecdc4;
+            font-size: 14px;
+            word-break: break-all;
+        }
+        #qrCode {
+            margin: 15px auto;
+            width: 150px;
+            height: 150px;
+        }
+        #qrCode canvas {
+            border-radius: 10px;
+        }
+        
+        .lobby-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 600px) {
+            .lobby-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .player-list-container {
+            background: rgba(255,255,255,0.05);
+            padding: 20px;
+            border-radius: 15px;
+        }
+        .player-list-container h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        .player-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .player-item .status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4caf50;
+        }
+        .player-item .status.offline {
+            background: #f44336;
+        }
+        
+        .controls-container {
+            background: rgba(255,255,255,0.05);
+            padding: 20px;
+            border-radius: 15px;
+        }
+        .controls-container h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        #hostStartBtn {
+            width: 100%;
+            padding: 20px;
+            background: linear-gradient(135deg, #4caf50 0%, #8bc34a 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        #hostStartBtn:hover:not(:disabled) {
+            transform: translateY(-2px);
+        }
+        #hostStartBtn:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        /* Game Area */
+        #gameArea {
+            display: none;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .game-header {
+            text-align: center;
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        .game-status {
+            font-size: 1.5em;
+            color: #4ecdc4;
+        }
+        
+        /* Current Image Display */
+        .image-display {
+            text-align: center;
+            background: rgba(255,255,255,0.05);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        .image-display h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        #currentImage {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 10px;
+            border: 3px solid #667eea;
+        }
+        
+        /* Progress Grid */
+        .progress-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .player-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 15px;
+            border: 2px solid transparent;
+            transition: border-color 0.3s, transform 0.2s;
+        }
+        .player-card.active {
+            border-color: #4ecdc4;
+        }
+        .player-card.finished {
+            border-color: #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+        
+        .player-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .player-card-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #fff;
+        }
+        .player-card-score {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .progress-bar-container {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        
+        .player-card-status {
+            font-size: 0.9em;
+            color: #aaa;
+        }
+        .player-card-status .loop-state {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            margin-left: 5px;
+        }
+        .loop-state.mainLoop {
+            background: #4caf50;
+            color: white;
+        }
+        .loop-state.secondLoop {
+            background: #ff9800;
+            color: white;
+        }
+        .loop-state.thirdLoop {
+            background: #f44336;
+            color: white;
+        }
+        .loop-state.finished {
+            background: #667eea;
+            color: white;
+        }
+        
+        /* Game Over Screen */
+        #gameOverArea {
+            display: none;
+            text-align: center;
+        }
+        .game-over-banner {
+            font-size: 4em;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        .winner-display {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+            padding: 30px;
+            border-radius: 20px;
+            margin: 20px auto;
+            max-width: 500px;
+        }
+        .winner-display h2 {
+            color: #4ecdc4;
+            margin-top: 0;
+        }
+        .winner-name {
+            font-size: 3em;
+            color: #ffd700;
+            font-weight: bold;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+        }
+        .winner-score {
+            font-size: 2em;
+            color: #667eea;
+            margin-top: 10px;
+        }
+        
+        .final-standings {
+            max-width: 500px;
+            margin: 30px auto;
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+        }
+        .final-standings h3 {
+            color: #667eea;
+            margin-top: 0;
+        }
+        .standing-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-size: 1.1em;
+        }
+        .standing-row:last-child {
+            border-bottom: none;
+        }
+        .standing-row .rank {
+            width: 40px;
+        }
+        .standing-row .name {
+            flex-grow: 1;
+            text-align: left;
+        }
+        .standing-row .score {
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .play-again-btn {
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .play-again-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        /* Network Mode Selection */
+        .network-mode-container {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .network-mode-title {
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .network-options {
+            display: flex;
+            gap: 10px;
+        }
+        .network-option {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.05);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .network-option:hover {
+            border-color: rgba(102, 126, 234, 0.5);
+        }
+        .network-option.selected {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.2);
+        }
+        .network-option .icon {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+        .network-option .title {
+            font-weight: bold;
+            color: #fff;
+        }
+        .network-option .desc {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 5px;
+        }
+        #ngrokUrlContainer {
+            display: none;
+            margin-top: 15px;
+        }
+        #ngrokUrl {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            color: #4ecdc4;
+            font-size: 14px;
+        }
+        .ngrok-help {
+            font-size: 12px;
+            color: #888;
+            margin-top: 8px;
+        }
+        .ngrok-help a {
+            color: #667eea;
+        }
+        .network-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .network-badge.local {
+            background: #4caf50;
+            color: white;
+        }
+        .network-badge.internet {
+            background: #667eea;
+            color: white;
+        }
+    </style>
 </head>
 <body>
-    <h1>Game Host</h1>
+    <h1>📚 TPR Vocabulary Game <span>Host</span></h1>
 
+    <!-- Create Game Screen -->
     <div id="createGame">
-        <input type="text" id="gameName" placeholder="Game Name">
-        <input type="text" id="hostName" placeholder="Your Name">
-        <input type="number" id="maxRounds" placeholder="Number of rounds" value="3" min="1" max="10">
-        <label for="votingMode">Voting Mode:</label>
-        <select id="votingMode">
-            <option value="individual">Battle Royale</option>
-            <option value="pairs">Pairs</option>
-            <option value="thriples">Thriples</option>
-        </select>
-        <label for="cefrLevel">English Level:</label>
+        <h2>Create New Game</h2>
+        <input type="text" id="gameName" placeholder="Game Name (e.g., Vocabulary Quiz)">
+        <input type="text" id="hostName" placeholder="Teacher/Host Name">
+        
+        <label for="cefrLevel">English Level (CEFR):</label>
         <select id="cefrLevel">
             <option value="A1">A1 - Beginner</option>
             <option value="A2">A2 - Elementary</option>
-            <option value="B1">B1 - Intermediate</option>
+            <option value="B1" selected>B1 - Intermediate</option>
             <option value="B2">B2 - Upper Intermediate</option>
             <option value="C1">C1 - Advanced</option>
         </select>
+        
+        <label for="maxTime">Time per Word (seconds):</label>
+        <select id="maxTime">
+            <option value="7000">7 seconds (Fast)</option>
+            <option value="11000" selected>11 seconds (Normal)</option>
+            <option value="15000">15 seconds (Relaxed)</option>
+            <option value="20000">20 seconds (Easy)</option>
+        </select>
+        
+        <div class="network-mode-container">
+            <div class="network-mode-title">🌐 Network Mode</div>
+            <div class="network-options">
+                <div class="network-option selected" onclick="selectNetworkMode('local')" id="localOption">
+                    <div class="icon">🏠</div>
+                    <div class="title">Local Network</div>
+                    <div class="desc">Same WiFi only</div>
+                </div>
+                <div class="network-option" onclick="selectNetworkMode('ngrok')" id="ngrokOption">
+                    <div class="icon">🌍</div>
+                    <div class="title">Internet (ngrok)</div>
+                    <div class="desc">Anyone worldwide</div>
+                </div>
+            </div>
+            <div id="ngrokUrlContainer">
+                <input type="text" id="ngrokUrl" placeholder="Paste your ngrok URL here...">
+                <div class="ngrok-help">
+                    💡 Run <code style="background:#333;padding:2px 5px;border-radius:3px;">ngrok http 3000</code> in terminal, then paste the https URL above.
+                </div>
+            </div>
+        </div>
+        
         <button onclick="createGame()">Create Game</button>
     </div>
 
-    <div id="gameLobby" style="display: none;">
-        <h2>Room Code: <span id="roomCode"></span></h2>
-        <p>Players join at: <span id="joinUrl"></span></p>
-        <div style="text-align: center; margin: 1rem 0;">
-            <h3 style="color: var(--accent); margin-bottom: 0.5rem;">📱 Scan QR Code to Join</h3>
+    <!-- Game Lobby -->
+    <div id="gameLobby">
+        <div class="lobby-header">
+            <p style="margin: 0; color: #888;">Room Code <span class="network-badge" id="networkBadge">Local</span></p>
+            <div class="room-code" id="roomCode"></div>
             <div id="qrCode"></div>
+            <p class="join-url">Join at: <span id="joinUrl"></span></p>
         </div>
-
-        <button id="hostStartBtn" onclick="hostStartGame()" style="margin: 1rem 0;">Start Game</button>
-
-        <div class="player-list" id="playerList"></div>
+        
+        <div class="lobby-content">
+            <div class="player-list-container">
+                <h3>👥 Players (<span id="playerCount">0</span>)</h3>
+                <div id="playerList"></div>
+            </div>
+            
+            <div class="controls-container">
+                <h3>⚙️ Game Controls</h3>
+                <button id="hostStartBtn" onclick="hostStartGame()" disabled>
+                    Waiting for players...
+                </button>
+                <p style="color: #888; font-size: 14px; margin-top: 15px;">
+                    ℹ️ At least 1 player must join to start the game.
+                </p>
+            </div>
+        </div>
     </div>
 
-    <div id="gameArea" style="display: none;">
-        <h2>Round <span id="currentRound"></span> of <span id="totalRounds"></span></h2>
-        <div id="gameState"></div>
-        <div id="timerDisplay" class="timer-display" style="display: none;">
-            <div class="timer-bar">
-                <div class="timer-fill" id="timerFill"></div>
-            </div>
-            <div class="timer-text" id="timerText">60</div>
+    <!-- Game Area (During Play) -->
+    <div id="gameArea">
+        <div class="game-header">
+            <div class="game-status" id="gameStatus">Game in Progress</div>
         </div>
-        <div id="results"></div>
-        <div id="gameOverBanner" style="display:none; text-align:center; margin-top:100px; font-size:3em; font-weight:bold;">GAME OVER!</div>
+        
+        <div class="image-display" id="imageDisplay" style="display: none;">
+            <h3>📷 Current Vocabulary</h3>
+            <img id="currentImage" src="" alt="Current vocabulary image">
+        </div>
+        
+        <h3 style="color: #667eea; margin-bottom: 15px;">📊 Player Progress</h3>
+        <div class="progress-grid" id="progressGrid"></div>
+    </div>
+
+    <!-- Game Over Area -->
+    <div id="gameOverArea">
+        <div class="game-over-banner">🎉 GAME OVER! 🎉</div>
+        
+        <div class="winner-display">
+            <h2>🏆 Winner</h2>
+            <div class="winner-name" id="winnerName"></div>
+            <div class="winner-score" id="winnerScore"></div>
+        </div>
+        
+        <div class="final-standings">
+            <h3>📋 Final Standings</h3>
+            <div id="standingsList"></div>
+        </div>
+        
+        <button class="play-again-btn" onclick="playAgain()">Play Again</button>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         let roomCode = null;
-        let gameOverInterval = null;
-        let timerInterval = null;
-
+        let networkMode = 'local'; // 'local' or 'ngrok'
+        let ngrokUrl = null;
+        
+        // =====================================================================
+        // Network Mode Selection
+        // =====================================================================
+        
+        function selectNetworkMode(mode) {
+            networkMode = mode;
+            
+            // Update UI
+            document.getElementById('localOption').classList.toggle('selected', mode === 'local');
+            document.getElementById('ngrokOption').classList.toggle('selected', mode === 'ngrok');
+            document.getElementById('ngrokUrlContainer').style.display = mode === 'ngrok' ? 'block' : 'none';
+            
+            // Try to auto-detect ngrok URL
+            if (mode === 'ngrok') {
+                detectNgrokUrl();
+            }
+        }
+        
+        async function detectNgrokUrl() {
+            try {
+                // Try to get ngrok URL from local API
+                const response = await fetch('http://127.0.0.1:4040/api/tunnels');
+                const data = await response.json();
+                
+                if (data.tunnels && data.tunnels.length > 0) {
+                    const httpsTunnel = data.tunnels.find(t => t.public_url.startsWith('https://'));
+                    if (httpsTunnel) {
+                        document.getElementById('ngrokUrl').value = httpsTunnel.public_url;
+                        ngrokUrl = httpsTunnel.public_url;
+                    }
+                }
+            } catch (e) {
+                // ngrok not running or API not accessible
+                console.log('Could not auto-detect ngrok URL');
+            }
+        }
+        
+        // =====================================================================
+        // Socket Connection Handling
+        // =====================================================================
+        
         socket.on('connect', () => {
-            // Socket connected
             if (roomCode) {
                 console.log('Reconnecting as host...');
                 socket.emit('host-reconnect', { roomCode });
             }
         });
-
-        socket.on('disconnect', () => {
-            // Socket disconnected
-        });
-
-        // Timer handling
-        socket.on('timer-start', (data) => {
-            startTimerDisplay(data.phase, data.duration);
-        });
-
-        function startTimerDisplay(phase, duration) {
-            clearInterval(timerInterval);
-            const timerDisplay = document.getElementById('timerDisplay');
-            const timerFill = document.getElementById('timerFill');
-            const timerText = document.getElementById('timerText');
-
-            timerDisplay.style.display = 'block';
-            let timeLeft = duration;
-
-            timerText.textContent = timeLeft;
-            timerFill.style.width = '100%';
-
-            timerInterval = setInterval(() => {
-                timeLeft--;
-                const percentage = (timeLeft / duration) * 100;
-                timerFill.style.width = percentage + '%';
-                timerText.textContent = timeLeft;
-
-                if (timeLeft <= 0) {
-                    clearInterval(timerInterval);
-                    timerDisplay.style.display = 'none';
-                }
-            }, 1000);
-        }
-
+        
+        // =====================================================================
+        // Create Game
+        // =====================================================================
+        
         function createGame() {
-            const gameName = document.getElementById('gameName').value;
-            const playerName = document.getElementById('hostName').value;
-            const maxRounds = parseInt(document.getElementById('maxRounds').value);
-            const votingMode = document.getElementById('votingMode').value;
+            const gameName = document.getElementById('gameName').value || 'Vocabulary Quiz';
+            const playerName = document.getElementById('hostName').value || 'Teacher';
             const cefrLevel = document.getElementById('cefrLevel').value;
-
-            if (!gameName || !playerName) {
-                alert('Please enter both game name and your name');
-                return;
-            }
-
-            socket.emit('create-game', { playerName, gameName, maxRounds, votingMode, cefrLevel });
+            const maxTime = parseInt(document.getElementById('maxTime').value);
+            
+            socket.emit('create-game', { 
+                playerName, 
+                gameName, 
+                cefrLevel,
+                maxTime
+            });
         }
-
+        
+        socket.on('game-created', (data) => {
+            roomCode = data.roomCode;
+            
+            document.getElementById('createGame').style.display = 'none';
+            document.getElementById('gameLobby').style.display = 'block';
+            
+            document.getElementById('roomCode').textContent = roomCode;
+            
+            // Determine join URL based on network mode
+            let joinUrl;
+            const networkBadge = document.getElementById('networkBadge');
+            
+            if (networkMode === 'ngrok') {
+                // Use ngrok URL if available
+                const inputNgrokUrl = document.getElementById('ngrokUrl').value.trim();
+                if (inputNgrokUrl) {
+                    // Remove trailing slash if present
+                    const baseUrl = inputNgrokUrl.replace(/\/$/, '');
+                    joinUrl = `${baseUrl}/player.html?room=${roomCode}`;
+                    networkBadge.textContent = '🌍 Internet';
+                    networkBadge.className = 'network-badge internet';
+                } else {
+                    // Fallback to local if no ngrok URL provided
+                    joinUrl = data.joinUrl || `${window.location.origin}/player.html?room=${roomCode}`;
+                    networkBadge.textContent = '🏠 Local';
+                    networkBadge.className = 'network-badge local';
+                }
+            } else {
+                joinUrl = data.joinUrl || `${window.location.origin}/player.html?room=${roomCode}`;
+                networkBadge.textContent = '🏠 Local';
+                networkBadge.className = 'network-badge local';
+            }
+            
+            document.getElementById('joinUrl').textContent = joinUrl;
+            
+            // Generate QR code
+            const qrContainer = document.getElementById('qrCode');
+            qrContainer.innerHTML = '';
+            new QRCode(qrContainer, {
+                text: joinUrl,
+                width: 150,
+                height: 150,
+                colorDark: "#667eea",
+                colorLight: "#1a1a2e",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+            
+            updateLobbyState(data.gameState);
+        });
+        
+        // =====================================================================
+        // Lobby State
+        // =====================================================================
+        
+        socket.on('player-joined', (data) => {
+            updateLobbyState(data.gameState);
+        });
+        
+        socket.on('bot-added', (data) => {
+            updateLobbyState(data.gameState);
+        });
+        
+        socket.on('bot-removed', (data) => {
+            updateLobbyState(data.gameState);
+        });
+        
+        function updateLobbyState(state) {
+            if (!state || !state.players) return;
+            
+            const playerCount = state.players.length;
+            document.getElementById('playerCount').textContent = playerCount;
+            
+            // Update player list
+            let html = '';
+            state.players.forEach(player => {
+                const statusClass = player.isConnected ? '' : 'offline';
+                html += `
+                    <div class="player-item">
+                        <span>${player.name}</span>
+                        <div class="status ${statusClass}"></div>
+                    </div>
+                `;
+            });
+            document.getElementById('playerList').innerHTML = html;
+            
+            // Update start button
+            const startBtn = document.getElementById('hostStartBtn');
+            if (playerCount >= 1) {
+                startBtn.disabled = false;
+                startBtn.textContent = '🚀 Start Game';
+            } else {
+                startBtn.disabled = true;
+                startBtn.textContent = 'Waiting for players...';
+            }
+        }
+        
+        // =====================================================================
+        // Start Game
+        // =====================================================================
+        
         function hostStartGame() {
-            // Host start game clicked
             if (!roomCode) {
                 alert('Game not created yet');
                 return;
             }
             socket.emit('start-game', { roomCode });
         }
-
-        function updateGameState(state) {
-            // Updating game state
-            if (state.players) {
-                let html = '';
-                state.players.forEach(player => {
-                    const status = player.isConnected ? 'online' : 'offline';
-                    const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
-                    html += `<div class="player">
-                        ${player.name} (${player.score} pts)<br>
-                        <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
-                    </div>`;
-                });
-                document.getElementById('playerList').innerHTML = html;
-
-                // Enable/disable start button based on players
-                const startBtn = document.getElementById('hostStartBtn');
-                startBtn.disabled = state.players.length < 2;
-                startBtn.textContent = state.players.length < 2 ?
-                    `Need ${2 - state.players.length} more player(s)` :
-                    'Start Game';
-            }
-
-            // Always update total rounds when provided, even if round is 0
-            if (typeof state.maxRounds !== 'undefined') {
-                document.getElementById('totalRounds').textContent = state.maxRounds;
-            }
-            if (typeof state.round !== 'undefined') {
-                document.getElementById('currentRound').textContent = state.round;
+        
+        socket.on('game-started', (data) => {
+            document.getElementById('gameLobby').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+            
+            document.getElementById('gameStatus').textContent = 
+                `Game in Progress - ${data.vocabularyCount} words`;
+        });
+        
+        // =====================================================================
+        // Progress Updates
+        // =====================================================================
+        
+        socket.on('progress-update', (data) => {
+            updateProgressGrid(data.players);
+        });
+        
+        function updateProgressGrid(players) {
+            if (!players) return;
+            
+            let html = '';
+            players.forEach(player => {
+                const progressPct = player.wordsTotal > 0 
+                    ? Math.round((player.wordsCompleted / player.wordsTotal) * 100) 
+                    : 0;
+                
+                const cardClass = player.isFinished ? 'finished' : 
+                                  player.loopState !== 'idle' ? 'active' : '';
+                
+                const loopLabel = getLoopLabel(player.loopState);
+                const loopClass = player.loopState || 'idle';
+                
+                html += `
+                    <div class="player-card ${cardClass}">
+                        <div class="player-card-header">
+                            <span class="player-card-name">${player.name}</span>
+                            <span class="player-card-score">${player.score} pts</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" style="width: ${progressPct}%"></div>
+                        </div>
+                        <div class="player-card-status">
+                            ${player.wordsCompleted}/${player.wordsTotal} words
+                            <span class="loop-state ${loopClass}">${loopLabel}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('progressGrid').innerHTML = html;
+        }
+        
+        function getLoopLabel(loopState) {
+            switch(loopState) {
+                case 'mainLoop': return '✏️ Typing';
+                case 'secondLoop': return '4️⃣ Choice';
+                case 'thirdLoop': return '2️⃣ 50/50';
+                case 'finished': return '✅ Done';
+                default: return '⏳ Waiting';
             }
         }
-
-        socket.on('game-created', (data) => {
-            roomCode = data.roomCode;
-
-            // Reset any previous GAME OVER state
-            if (gameOverInterval) {
-                clearInterval(gameOverInterval);
-                gameOverInterval = null;
+        
+        // =====================================================================
+        // Game Over
+        // =====================================================================
+        
+        socket.on('game-over', (data) => {
+            document.getElementById('gameArea').style.display = 'none';
+            document.getElementById('gameOverArea').style.display = 'block';
+            
+            // Show winner
+            if (data.winner) {
+                document.getElementById('winnerName').textContent = data.winner.name;
+                document.getElementById('winnerScore').textContent = `${data.winner.score} points`;
             }
-            const gameOverBanner = document.getElementById('gameOverBanner');
-            gameOverBanner.style.display = 'none';
-            gameOverBanner.style.visibility = 'visible';
-
-            document.getElementById('createGame').style.display = 'none';
-            document.getElementById('gameLobby').style.display = 'block';
-            document.getElementById('results').innerHTML = '';
-            document.getElementById('gameState').innerHTML = '';
-
-            document.getElementById('roomCode').textContent = roomCode;
-            const joinUrl = data.joinUrl || `${window.location.origin}/player.html?room=${roomCode}`;
-            document.getElementById('joinUrl').textContent = joinUrl;
-
-            // Generate QR code
-            const qrContainer = document.getElementById('qrCode');
-            qrContainer.innerHTML = ''; // Clear previous
-            new QRCode(qrContainer, {
-                text: joinUrl,
-                width: 200,
-                height: 200,
-                colorDark: "#5dade2",
-                colorLight: "#1a1a1a",
-                correctLevel: QRCode.CorrectLevel.H
+            
+            // Show standings
+            let standingsHtml = '';
+            data.finalScores.forEach((player, idx) => {
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+                standingsHtml += `
+                    <div class="standing-row">
+                        <span class="rank">${medal}</span>
+                        <span class="name">${player.name}</span>
+                        <span class="score">${player.score} pts</span>
+                    </div>
+                `;
             });
-
-            // Game created
-            updateGameState(data.gameState);
+            document.getElementById('standingsList').innerHTML = standingsHtml;
         });
-
-        socket.on('player-joined', (data) => {
-            updateGameState(data.gameState);
-        });
-
+        
+        // =====================================================================
+        // Play Again
+        // =====================================================================
+        
+        function playAgain() {
+            // Reset UI and go back to create screen
+            document.getElementById('gameOverArea').style.display = 'none';
+            document.getElementById('createGame').style.display = 'block';
+            roomCode = null;
+        }
+        
+        // =====================================================================
+        // Error Handling
+        // =====================================================================
+        
         socket.on('error', (data) => {
             if (data.message === 'Game not found') {
                 alert('Session expired or server restarted. Please create a new game.');
@@ -209,172 +881,11 @@
                 document.getElementById('createGame').style.display = 'block';
                 document.getElementById('gameLobby').style.display = 'none';
                 document.getElementById('gameArea').style.display = 'none';
+                document.getElementById('gameOverArea').style.display = 'none';
             } else {
                 alert('Error: ' + data.message);
             }
         });
-
-        // Intermission between rounds
-        socket.on('intermission', (data) => {
-            // Clear previous round's results
-            document.getElementById('results').innerHTML = '';
-            document.getElementById('gameState').innerHTML = 'Get ready for the next round!';
-
-            updateGameState(data);
-        });
-
-        // Start of answering phase after intermission
-        socket.on('start-answering', (data) => {
-            // Received start-answering event
-            document.getElementById('gameState').innerHTML = '';
-            updateGameState(data);
-        });
-
-        socket.on('game-started', (data) => {
-            document.getElementById('gameLobby').style.display = 'none';
-            document.getElementById('gameArea').style.display = 'block';
-            updateGameState(data);
-        });
-
-        socket.on('answer-submitted', (data) => {
-            document.getElementById('gameState').innerHTML =
-                `Answers remaining: ${data.answersRemaining}`;
-        });
-
-        socket.on('start-voting', (data) => {
-            let html = `<h3>Voting Time! <span style="font-size:0.6em">(${data.matchIndex + 1}/${data.totalMatches})</span></h3>`;
-            const match = data.match;
-
-            if (data.mode === 'pairs') {
-                html += `<div class="pair" style="margin-bottom: 20px; padding: 10px; border: 1px solid #5dade2; border-radius: 8px;">
-                    <p><strong>Question:</strong> ${match.promptText}</p>
-                    <div style="display: flex; justify-content: space-around; font-size: 1.5em; margin-top: 20px;">
-                        <span id="opt-${match.player1.id}">${match.player1.answer}</span>
-                        <span style="color:#aaa">VS</span>
-                        <span id="opt-${match.player2.id}">${match.player2.answer}</span>
-                    </div>
-                </div>`;
-            } else if (data.mode === 'thriples') {
-                html += `<div class="triple" style="margin-bottom: 20px; padding: 10px; border: 1px solid #5dade2; border-radius: 8px;">
-                    <p><strong>Question:</strong> ${match.promptText}</p>
-                    <div style="font-size: 1.3em; margin-top: 15px;">
-                        ${match.answers.map((a, i) => `<div style="margin: 10px 0;" id="opt-${a.id}"><strong>${i+1}.</strong> ${a.answer}</div>`).join('')}
-                    </div>
-                </div>`;
-            } else if (data.mode === 'individual') {
-                html += '<p>Vote for the funniest answer!</p>';
-                match.answers.forEach(ans => {
-                    html += `<p style="font-size: 1.1em; margin: 5px 0;" id="opt-${ans.playerId}">"${ans.answer}"</p>`;
-                });
-            }
-            document.getElementById('gameState').innerHTML = html;
-        });
-
-        socket.on('match-results', (data) => {
-            // Visualize results on the current match
-            // data.votes = { playerId: count, ... }
-            // data.winners = [playerId, ...]
-            
-            const votes = data.votes;
-            for (const [playerId, count] of Object.entries(votes)) {
-                const el = document.getElementById(`opt-${playerId}`);
-                if (el) {
-                    el.innerHTML += ` <span style="color: #f1c40f; font-weight: bold;">(+${count})</span>`;
-                    if (data.winners.includes(playerId)) {
-                        el.style.border = "2px solid #2ecc71";
-                        el.style.backgroundColor = "rgba(46, 204, 113, 0.1)";
-                        el.style.borderRadius = "8px";
-                        el.style.padding = "4px 8px";
-                        el.innerHTML += ` 🏆`;
-                    }
-                }
-            }
-        });
-
-        socket.on('show-results', (data) => {
-            let html = '<h3>Results!</h3>';
-            
-            if (data.results.isFinal) {
-                html += '<h4>Final Round Rankings:</h4>';
-                data.results.answers.forEach((ans, idx) => {
-                    html += `<p><strong>${idx + 1}. ${ans.name}</strong>: "${ans.answer}" (${ans.votes} votes)</p>`;
-                });
-                html += '<br>';
-            }
-
-            html += '<h4>Scores:</h4>';
-            data.results.scores.forEach(score => {
-                html += `<p>${score.name}: ${score.score}</p>`;
-            });
-            document.getElementById('results').innerHTML = html;
-        });
-
-        // Game has fully finished (after final round)
-        socket.on('game-over', (data) => {
-            // Clear main game area except for GAME OVER banner
-            document.getElementById('gameLobby').style.display = 'none';
-            document.getElementById('gameArea').style.display = 'block';
-            document.getElementById('gameState').innerHTML = '';
-            document.getElementById('results').innerHTML = '';
-
-            const gameOverBanner = document.getElementById('gameOverBanner');
-            gameOverBanner.style.display = 'block';
-            gameOverBanner.style.visibility = 'visible';
-
-            // Make GAME OVER appear / disappear every 2 seconds
-            if (gameOverInterval) {
-                clearInterval(gameOverInterval);
-            }
-            gameOverInterval = setInterval(() => {
-                gameOverBanner.style.visibility =
-                    gameOverBanner.style.visibility === 'hidden' ? 'visible' : 'visible';
-            }, 500);
-        });
-
-        // Start of a new round after results
-        socket.on('next-round', (data) => {
-            // Clear previous round's results and voting state
-            document.getElementById('results').innerHTML = '';
-            document.getElementById('gameState').innerHTML = '';
-
-            // Show game area and update round info
-            document.getElementById('gameArea').style.display = 'block';
-            updateGameState(data);
-        });
-
-        function updateGameState(state) {
-            if (state.players) {
-                let html = '';
-                state.players.forEach(player => {
-                    const status = player.isConnected ? 'online' : 'offline';
-                    const statusColor = player.isConnected ? '#2ecc71' : '#e74c3c';
-                    html += `<div class="player">
-                        ${player.name} (${player.score} pts)<br>
-                        <span style="color:${statusColor}; font-size:0.9em;">${status}</span>
-                    </div>`;
-                });
-                document.getElementById('playerList').innerHTML = html;
-
-                // Enable/disable start button based on players
-                const startBtn = document.getElementById('hostStartBtn');
-                if (startBtn) {
-                   startBtn.disabled = state.players.length < 2;
-                   startBtn.textContent = state.players.length < 2 ?
-                       `Need ${2 - state.players.length} more player(s)` :
-                       'Start Game';
-                }
-            }
-
-            // Always update total rounds when provided, even if round is 0
-            if (typeof state.maxRounds !== 'undefined') {
-                const totalRoundsEl = document.getElementById('totalRounds');
-                if (totalRoundsEl) totalRoundsEl.textContent = state.maxRounds;
-            }
-            if (typeof state.round !== 'undefined') {
-                const currentRoundEl = document.getElementById('currentRound');
-                if (currentRoundEl) currentRoundEl.textContent = state.round;
-            }
-        }
     </script>
 </body>
 </html>

@@ -1,6 +1,10 @@
 const { v4: uuidv4 } = require('uuid');
 const http = require('http');
 
+// =============================================================================
+// GAME MANAGER - Room & Player Management (Reusable Infrastructure)
+// =============================================================================
+
 class GameManager {
   constructor() {
     this.games = new Map(); // roomCode -> Game instance
@@ -52,7 +56,7 @@ class GameManager {
       if (player) {
         player.isConnected = false;
       }
-      // IMPORTANT: Do NOT delete the game or remove the player record here.
+      // Do NOT delete the game or remove the player record.
       // This allows players to reconnect (same name) and reclaim their slot.
     }
 
@@ -69,48 +73,69 @@ class GameManager {
   }
 }
 
+// =============================================================================
+// VOCABULARY DATA - Pre-loaded JSON (10 words)
+// =============================================================================
+
+const DEFAULT_VOCABULARY = [
+  { id: '1', word: "Spend", definition: "Use money or time", image: "Spend.png" },
+  { id: '2', word: "Desert", definition: "A very hot and dry place", image: "Desert.png" },
+  { id: '3', word: "Temperature", definition: "How hot or cold something is", image: "Temperature.png" },
+  { id: '4', word: "Lookout", definition: "A person who looks and watches", image: "Lookout.jpg" },
+  { id: '5', word: "Suddenly", definition: "Something happens very fast", image: "Suddenly.png" },
+  { id: '6', word: "Sand", definition: "Very small dry pieces on the ground", image: "Sand.png" },
+  { id: '7', word: "Carefully", definition: "Do something with care", image: "Carefully.png" },
+  { id: '8', word: "Noise", definition: "A loud or strong sound", image: "Noise.png" },
+  { id: '9', word: "Reach", definition: "Arrive at a place", image: "Reach.jpg" },
+  { id: '10', word: "Value", definition: "How important something is", image: "Value.png" }
+];
+
+// =============================================================================
+// GAME CLASS - TPR Vocabulary Game Logic
+// =============================================================================
+
 class Game {
   constructor(roomCode, name, hostSocketId, hostName, settings = {}, emitFunction = null, debugMode = false) {
     this.id = uuidv4();
     this.roomCode = roomCode;
     this.name = name;
 
-    // Host metadata only (host does not play)
+    // Host metadata (host does not play)
     this.hostSocketId = hostSocketId;
     this.hostName = hostName;
 
-    // Configurable game settings
+    // Players list
+    this.players = [];
+    this.botsCount = 0;
+
+    // Game state: waiting, playing, results, finished
+    this.state = 'waiting';
+
+    // Emit function for socket events
+    this.emit = emitFunction;
+    this.debugMode = debugMode;
+
+    // Game settings
     this.settings = {
-      maxRounds: settings.maxRounds || 3,
-      answerTime: settings.answerTime || 60, // seconds
-      voteTime: settings.voteTime || 30,    // seconds
-      intermissionTime: settings.intermissionTime || 10, // seconds
-      gameMode: settings.gameMode || 'classic', // classic, speed, creative
-      votingMode: settings.votingMode || 'individual', // individual, pairs
+      maxTime: settings.maxTime || 11000, // 11 seconds per loop
+      cefrLevel: settings.cefrLevel || 'B1',
       ...settings
     };
 
-    this.players = [];
-    this.hostId = null; // kept for compatibility but unused for gameplay
-    this.state = 'waiting'; // waiting, answering, intermission, voting, results
-    this.round = 0;
+    // Vocabulary data for this game session
+    this.vocabularyData = [...DEFAULT_VOCABULARY];
 
-    this.emit = emitFunction;
-    this.debugMode = debugMode;
-    this.botsCount = 0;
+    // Per-player game states
+    // Map: playerId -> PlayerGameState
+    this.playerStates = new Map();
 
-    // Game data
-    // Prompts are lazily loaded from the local AI model on first game start.
-    this.prompts = [];
-    this.currentPrompts = [];
-    this.answers = new Map(); // playerId -> Map(promptId -> { promptId, answer, timestamp })
-    this.votes = new Map(); // playerId -> voteId (or array of voteIds for R3)
-    this.votingMatches = [];
-    this.currentMatchIndex = 0;
-
-    // Timers
-    this.timers = new Map();
+    // Player timers (individual)
+    this.playerTimers = new Map(); // playerId -> { timeout, startTime }
   }
+
+  // ===========================================================================
+  // PLAYER MANAGEMENT
+  // ===========================================================================
 
   addPlayer(name, socketId, isHost = false, isBot = false) {
     const player = {
@@ -127,7 +152,7 @@ class Game {
   }
 
   addBot() {
-    if (this.players.length >= 8) return null; 
+    if (this.players.length >= 8) return null;
     this.botsCount++;
     const botName = `Bot ${this.botsCount}`;
     return this.addPlayer(botName, null, false, true);
@@ -143,302 +168,8 @@ class Game {
 
   removePlayer(playerId) {
     this.players = this.players.filter((p) => p.id !== playerId);
-    this.answers.delete(playerId);
-    this.votes.delete(playerId);
-  }
-
-  async startGame() {
-    await this.loadPromptsFromAIIfNeeded();
-    this.round = 1;
-    this.startAnsweringPhase();
-  }
-
-  async loadPromptsFromAIIfNeeded() {
-    if (this.prompts && this.prompts.length > 0) return;
-
-    try {
-      // Increased to 50 to support N prompts per round logic
-      const aiText = await fetchPromptsFromLocalAI(this.settings.cefrLevel || 'B1');
-      let parsed;
-      try {
-        parsed = JSON.parse(aiText);
-      } catch (e) {
-        parsed = aiText.split('\n').map((line) => line.trim()).filter((line) => !!line);
-      }
-
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        this.prompts = this.generateFallbackPrompts();
-        return;
-      }
-
-      const validPrompts = parsed
-        .map(text => String(text).trim())
-        .filter(text => text.length > 0 && text.length < 100 && text.endsWith('______'))
-        .slice(0, 50);
-
-      if (validPrompts.length < 5) {
-        this.prompts = this.generateFallbackPrompts();
-        return;
-      }
-
-      this.prompts = validPrompts.map((text, index) => ({
-        id: index + 1,
-        text,
-      }));
-    } catch (err) {
-      console.error('Failed to load prompts:', err);
-      this.prompts = this.generateFallbackPrompts();
-    }
-  }
-
-  generateFallbackPrompts() {
-    return [
-      { id: 1, text: 'A terrible name for a dog: ______' },
-      { id: 2, text: 'A terrible name for a cat: ______' },
-      { id: 3, text: 'The worst superpower: ______' },
-      { id: 4, text: 'An awful flavor of ice cream: ______' },
-      { id: 5, text: 'The most useless invention: ______' },
-      { id: 6, text: 'Worst pickup line: ______' },
-      { id: 7, text: 'A horrible movie title: ______' },
-      { id: 8, text: 'The worst job in the world: ______' },
-      { id: 9, text: 'An embarrassing tattoo: ______' },
-      { id: 10, text: 'The lamest excuse for being late: ______' },
-      // Added more fallbacks
-      { id: 11, text: 'Best way to scare a ghost: ______' },
-      { id: 12, text: 'Worst place to propose: ______' },
-      { id: 13, text: 'A bad name for a band: ______' },
-      { id: 14, text: 'Worst thing to say to a cop: ______' },
-      { id: 15, text: 'A weird reason to get fired: ______' }
-    ];
-  }
-
-  selectRandomPrompts(count) {
-    // Helper to get N random prompts
-    const shuffled = [...this.prompts].sort(() => Math.random() - 0.5);
-    if (count > shuffled.length) {
-         // Reuse if needed (basic cycling)
-         const extended = [];
-         while (extended.length < count) {
-             extended.push(...shuffled);
-         }
-         return extended.slice(0, count);
-    }
-    return shuffled.slice(0, count);
-  }
-
-  assignPrompts() {
-    const prompts = [];
-    const numPlayers = this.players.length;
-
-    // Ensure we have prompts loaded (this.prompts)
-    if (!this.prompts || this.prompts.length === 0) {
-        this.prompts = this.generateFallbackPrompts();
-    }
-
-    if (this.isFinalRound()) { // Round 3: Last Lash
-        // One shared prompt for everyone
-        const promptIndex = Math.floor(Math.random() * this.prompts.length);
-        const sharedPrompt = this.prompts[promptIndex];
-        this.players.forEach(p => {
-            prompts.push({ playerId: p.id, promptId: sharedPrompt.id, text: sharedPrompt.text });
-        });
-    } else { // Round 1 & 2
-        // Circular assignment: P_i gets Prompt_i and Prompt_{i-1} (wrapping)
-        // We need N unique prompts (one per pair).
-        const selectedPrompts = this.selectRandomPrompts(numPlayers); 
-        
-        // Assign Pair i: P[i], P[i+1] -> Prompt[i]
-        for (let i = 0; i < numPlayers; i++) {
-            const p1 = this.players[i];
-            const p2 = this.players[(i + 1) % numPlayers];
-            const prompt = selectedPrompts[i];
-            
-            // Assign to p1
-            prompts.push({ playerId: p1.id, promptId: prompt.id, text: prompt.text });
-            // Assign to p2
-            prompts.push({ playerId: p2.id, promptId: prompt.id, text: prompt.text });
-        }
-    }
-    return prompts;
-  }
-
-  async simulateBotAnswers() {
-    if (!this.debugMode) return;
-    const botPromises = [];
-    this.players.forEach(player => {
-      if (player.isBot) {
-        const playerPrompts = this.currentPrompts.filter(p => p.playerId === player.id);
-        playerPrompts.forEach(prompt => {
-            const promise = generateBotAnswer(prompt.text, this.settings.cefrLevel || 'B1').then(answer => {
-                this.submitAnswer(player.id, prompt.promptId, answer);
-            });
-            botPromises.push(promise);
-        });
-      }
-    });
-    await Promise.all(botPromises);
-  }
-
-  submitAnswer(playerId, promptId, answer) {
-    if (!this.answers.has(playerId)) {
-        this.answers.set(playerId, new Map());
-    }
-    this.answers.get(playerId).set(promptId, { promptId, answer, timestamp: Date.now() });
-
-    if (this.allAnswersSubmitted()) {
-      this.clearTimer('answer');
-      this.startVotingPhase();
-    }
-  }
-
-  allAnswersSubmitted() {
-     let totalSubmitted = 0;
-     this.answers.forEach(map => totalSubmitted += map.size);
-     return totalSubmitted >= this.currentPrompts.length;
-  }
-
-  isFinalRound() {
-    return this.round >= this.settings.maxRounds;
-  }
-
-  startNextRound() {
-    if (this.round >= this.settings.maxRounds) {
-      this.state = 'finished';
-      return false;
-    }
-
-    this.round++;
-    this.state = 'intermission';
-    this.startTimer('intermission', this.settings.intermissionTime);
-
-    return true;
-  }
-
-  startAnsweringPhase() {
-    this.state = 'answering';
-    this.currentPrompts = this.assignPrompts();
-    this.answers.clear();
-    this.startTimer('answer', this.settings.answerTime);
-    this.simulateBotAnswers();
-  }
-
-  createFinalRoundVoting() {
-    // Round 3: "Battle Royale" - All answers on screen
-    const answers = this.createIndividualVoting(); // Gets all answers
-    // Shuffle them
-    for (let i = answers.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [answers[i], answers[j]] = [answers[j], answers[i]];
-    }
-    // One big match, mode 'medals'
-    // Ensure promptText is available
-    const promptText = answers[0]?.promptText || 'Final Round';
-    return [{ mode: 'medals', answers, promptText }];
-  }
-
-  createAnswerPairs() {
-    const matches = [];
-    const answersArray = Array.from(this.answers.entries());
-
-    // Group answers by promptId
-    const answersByPrompt = new Map();
-    answersArray.forEach(([playerId, answerMap]) => {
-        answerMap.forEach((answerData, promptId) => {
-            if (!answersByPrompt.has(promptId)) {
-                answersByPrompt.set(promptId, []);
-            }
-            answersByPrompt.get(promptId).push({
-                playerId,
-                ...answerData
-            });
-        });
-    });
-
-    // Create pairs for each prompt
-    answersByPrompt.forEach((answers, promptId) => {
-        // Shuffle answers for this prompt
-        for (let i = answers.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [answers[i], answers[j]] = [answers[j], answers[i]];
-        }
-
-        // Create pairs
-        for (let i = 0; i < answers.length; i += 2) {
-            if (i + 1 < answers.length) {
-                const prompt = this.prompts.find(p => p.id === promptId);
-                matches.push({
-                    mode: 'pairs',
-                    promptId,
-                    promptText: prompt ? prompt.text : '',
-                    player1: {
-                        id: answers[i].playerId,
-                        name: this.getPlayer(answers[i].playerId).name,
-                        answer: answers[i].answer
-                    },
-                    player2: {
-                        id: answers[i+1].playerId,
-                        name: this.getPlayer(answers[i+1].playerId).name,
-                        answer: answers[i+1].answer
-                    }
-                });
-            }
-        }
-    });
-    
-    return matches.sort(() => Math.random() - 0.5);
-  }
-
-  createThriplesVoting() {
-      // (Retained for backward compatibility if needed, but not used in new logic)
-      return this.createAnswerPairs(); // Fallback to pairs or handled elsewhere
-  }
-
-  createIndividualVoting() {
-    const allAnswers = [];
-    this.answers.forEach((answerMap, playerId) => {
-        answerMap.forEach((answerData) => {
-             allAnswers.push({
-                playerId,
-                name: this.getPlayer(playerId).name,
-                answer: answerData.answer,
-                promptText: this.prompts.find(p => p.id === answerData.promptId)?.text || ''
-            });
-        });
-    });
-    return allAnswers;
-  }
-
-  calculateTiebreakerResults() {
-       const voteCounts = new Map();
-        this.votes.forEach((voteId) => {
-            // Tiebreaker usually single vote
-          voteCounts.set(voteId, (voteCounts.get(voteId) || 0) + 1);
-        });
-
-        let maxVotes = 0;
-        voteCounts.forEach((count) => {
-          if (count > maxVotes) maxVotes = count;
-        });
-
-        const winners = [];
-        voteCounts.forEach((count, playerId) => {
-          if (count === maxVotes) winners.push(playerId);
-        });
-        
-        winners.forEach(playerId => {
-             const player = this.getPlayer(playerId);
-             if (player) player.score += 500;
-        });
-
-        return {
-            answers: this.tiebreakerAnswers ? this.tiebreakerAnswers.map(ans => ({
-                ...ans,
-                votes: voteCounts.get(ans.playerId) || 0,
-                isWinner: winners.includes(ans.playerId)
-            })) : [],
-            scores: this.getFinalScores(),
-            isFinal: true
-        };
+    this.playerStates.delete(playerId);
+    this.clearPlayerTimer(playerId);
   }
 
   getPlayer(playerId) {
@@ -449,299 +180,521 @@ class Game {
     return this.players.find((p) => p.name === name);
   }
 
-  startTimer(timerName, seconds) {
-    this.clearTimer(timerName);
+  // ===========================================================================
+  // TIMER MANAGEMENT (Per-Player)
+  // ===========================================================================
 
-    // Disable gameplay timers to allow infinite time
-    if (timerName !== 'intermission') {
+  startPlayerTimer(playerId, durationMs, callback) {
+    this.clearPlayerTimer(playerId);
+
+    const timerData = {
+      startTime: Date.now(),
+      duration: durationMs,
+      timeout: setTimeout(() => {
+        callback();
+      }, durationMs)
+    };
+
+    this.playerTimers.set(playerId, timerData);
+
+    // Emit timer start to this specific player
+    const player = this.getPlayer(playerId);
+    if (player && player.socketId && this.emit) {
+      this.emitToPlayer(playerId, 'timer-start', { duration: durationMs });
+    }
+  }
+
+  clearPlayerTimer(playerId) {
+    const timer = this.playerTimers.get(playerId);
+    if (timer && timer.timeout) {
+      clearTimeout(timer.timeout);
+    }
+    this.playerTimers.delete(playerId);
+  }
+
+  getPlayerTimeRemaining(playerId) {
+    const timer = this.playerTimers.get(playerId);
+    if (!timer) return 0;
+    const elapsed = Date.now() - timer.startTime;
+    return Math.max(0, timer.duration - elapsed);
+  }
+
+  // ===========================================================================
+  // SOCKET EMIT HELPERS
+  // ===========================================================================
+
+  emitToPlayer(playerId, event, data) {
+    const player = this.getPlayer(playerId);
+    if (player && player.socketId && this.emit) {
+      // This requires the emit function to support targeted emits
+      // We'll handle this in index.js by passing io instance
+      this.emit(event, { ...data, targetPlayerId: playerId });
+    }
+  }
+
+  emitToHost(event, data) {
+    if (this.emit) {
+      this.emit(event, { ...data, targetHost: true });
+    }
+  }
+
+  emitToAll(event, data) {
+    if (this.emit) {
+      this.emit(event, data);
+    }
+  }
+
+  // ===========================================================================
+  // GAME INITIALIZATION
+  // ===========================================================================
+
+  startGame() {
+    this.state = 'playing';
+
+    // Initialize player states for all connected players
+    this.players.forEach(player => {
+      if (player.isConnected && !player.isBot) {
+        this.initializePlayerState(player.id);
+      }
+    });
+
+    // Emit game start to all
+    this.emitToAll('game-started', {
+      vocabularyCount: this.vocabularyData.length,
+      maxTime: this.settings.maxTime
+    });
+
+    // Start each player's main loop
+    this.players.forEach(player => {
+      if (player.isConnected && !player.isBot) {
+        this.startMainLoop(player.id);
+      }
+    });
+
+    // Send initial progress to host
+    this.broadcastProgress();
+  }
+
+  initializePlayerState(playerId) {
+    // Each player gets their own shuffled queue
+    const shuffledQueue = this.shuffleArray([...this.vocabularyData]);
+
+    const playerState = {
+      queue: shuffledQueue,
+      currentWord: null,
+      loopState: 'idle', // idle, mainLoop, secondLoop, thirdLoop
+      score: 0,
+      inputLocked: false,
+      wordsCompleted: 0,
+      wordsTotal: shuffledQueue.length,
+      isFinished: false
+    };
+
+    this.playerStates.set(playerId, playerState);
+    return playerState;
+  }
+
+  shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  }
+
+  // ===========================================================================
+  // MAIN LOOP (Type the Word) - +2 points
+  // ===========================================================================
+
+  startMainLoop(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state) return;
+
+    // Check if queue is empty (player finished)
+    if (state.queue.length === 0) {
+      this.playerFinished(playerId);
       return;
     }
 
-    this.timers.set(timerName, {
-      start: Date.now(),
-      duration: seconds * 1000,
-      endTime: Date.now() + seconds * 1000,
-      interval: setInterval(() => {
-        const timer = this.timers.get(timerName);
-        if (!timer) return;
-        const remaining = Math.max(0, timer.endTime - Date.now());
-        if (remaining <= 0) {
-          this.handleTimerEnd(timerName);
-        }
-      }, 1000),
+    // Peek at top card (do NOT remove yet)
+    state.currentWord = state.queue[0];
+    state.loopState = 'mainLoop';
+    state.inputLocked = false;
+
+    // Emit to player: show image, enable text input
+    this.emitToPlayer(playerId, 'main-loop-start', {
+      image: state.currentWord.image,
+      wordIndex: state.wordsCompleted + 1,
+      totalWords: state.wordsTotal
     });
 
-    if (this.emit) {
-      this.emit('timer-start', { phase: timerName, duration: seconds });
-    }
+    // Start timer
+    this.startPlayerTimer(playerId, this.settings.maxTime, () => {
+      this.handleMainLoopTimeout(playerId);
+    });
+
+    this.broadcastProgress();
   }
 
-  startVotingPhase() {
-    this.votes.clear();
-    
-    if (this.isFinalRound()) {
-      this.votingMatches = this.createFinalRoundVoting();
+  handleMainLoopAnswer(playerId, answer) {
+    const state = this.playerStates.get(playerId);
+    if (!state || state.loopState !== 'mainLoop' || state.inputLocked) return;
+
+    const isCorrect = answer.trim().toLowerCase() === state.currentWord.word.toLowerCase();
+
+    if (isCorrect) {
+      this.clearPlayerTimer(playerId);
+
+      // Award points
+      state.score += 2;
+      this.updatePlayerScore(playerId, state.score);
+
+      // Success: Remove word from queue
+      state.queue.shift();
+      state.wordsCompleted++;
+
+      // Emit success feedback
+      this.emitToPlayer(playerId, 'answer-result', {
+        correct: true,
+        points: 2,
+        word: state.currentWord.word,
+        message: 'Correct!'
+      });
+
+      // Brief pause then next word
+      setTimeout(() => {
+        this.startMainLoop(playerId);
+      }, 1000);
     } else {
-       // Round 1 & 2 use Pairs
-       this.votingMatches = this.createAnswerPairs();
-       // Fallback for testing/low player count
-       if (this.votingMatches.length === 0) {
-           const answers = this.createIndividualVoting();
-           this.votingMatches = [{ mode: 'individual', answers }];
-       }
-    }
-    
-    this.currentMatchIndex = 0;
-    this.startNextVotingMatch();
-  }
+      this.clearPlayerTimer(playerId);
 
-  startNextVotingMatch() {
-    if (this.currentMatchIndex >= this.votingMatches.length) {
-       // All matches done
-       this.completeVotingPhase();
-       return;
-    }
+      // Emit incorrect feedback
+      this.emitToPlayer(playerId, 'answer-result', {
+        correct: false,
+        points: 0,
+        message: 'Incorrect!'
+      });
 
-    this.votes.clear();
-    const currentMatch = this.votingMatches[this.currentMatchIndex];
-    
-    this.state = 'voting';
-    this.startTimer('vote', this.settings.voteTime);
-    
-    this.simulateBotVotesForMatch(currentMatch);
-
-    if (this.emit) {
-        this.emit('start-voting', {
-            mode: currentMatch.mode || (this.isFinalRound() ? 'medals' : 'individual'), 
-            match: currentMatch,
-            matchIndex: this.currentMatchIndex,
-            totalMatches: this.votingMatches.length,
-            isFinal: this.isFinalRound()
-        });
+      // Move to second loop
+      setTimeout(() => {
+        this.startSecondLoop(playerId);
+      }, 1000);
     }
   }
 
-  simulateBotVotesForMatch(match) {
-    if (!this.debugMode) return;
-    this.players.forEach(player => {
-      if (player.isBot) {
-        let voteId;
-        if (match.mode === 'individual') {
-             voteId = match.answers[Math.floor(Math.random() * match.answers.length)].playerId;
-        } else if (match.player1) { // Pair
-             voteId = Math.random() < 0.5 ? match.player1.id : match.player2.id;
-        } else if (match.answers) { // Thriple/Medals
-             voteId = match.answers[Math.floor(Math.random() * match.answers.length)].id || match.answers[Math.floor(Math.random() * match.answers.length)].playerId;
-        }
-        if (voteId) {
-             this.submitVote(player.id, voteId);
-             console.log(`Bot ${player.name} voted for: ${voteId}`);
-        }
-      }
+  handleMainLoopTimeout(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || state.loopState !== 'mainLoop') return;
+
+    this.emitToPlayer(playerId, 'timeout', { message: "Time's up!" });
+
+    // Move to second loop
+    setTimeout(() => {
+      this.startSecondLoop(playerId);
+    }, 500);
+  }
+
+  // ===========================================================================
+  // SECOND LOOP (Multiple Choice - 4 Options) - +1 point
+  // ===========================================================================
+
+  startSecondLoop(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || !state.currentWord) return;
+
+    state.loopState = 'secondLoop';
+    state.inputLocked = false;
+
+    // Create 3 distractors + correct answer
+    const distractors = this.vocabularyData
+      .filter(item => item.id !== state.currentWord.id);
+    const shuffledDistractors = this.shuffleArray([...distractors]).slice(0, 3);
+    const options = this.shuffleArray([state.currentWord, ...shuffledDistractors]);
+
+    // Emit to player: show 4 options
+    this.emitToPlayer(playerId, 'second-loop-start', {
+      image: state.currentWord.image,
+      options: options.map((opt, idx) => ({
+        id: opt.id,
+        word: opt.word,
+        index: idx + 1
+      })),
+      message: 'Select the correct word:'
     });
+
+    // Start timer
+    this.startPlayerTimer(playerId, this.settings.maxTime, () => {
+      this.handleSecondLoopTimeout(playerId);
+    });
+
+    this.broadcastProgress();
   }
 
-   submitVote(playerId, voteId) {
-      if (this.state === 'tiebreaker' && !this.tiebreakerPlayers.includes(playerId)) {
-        return; 
-      }
+  handleSecondLoopAnswer(playerId, selectedId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || state.loopState !== 'secondLoop' || state.inputLocked) return;
 
-      this.votes.set(playerId, voteId);
+    const isCorrect = selectedId === state.currentWord.id;
 
-      if (this.allVotesSubmitted()) {
-        if (this.state === 'tiebreaker') {
-          this.clearTimer('tiebreaker');
-          this.completeTiebreaker();
-        } else {
-          this.clearTimer('vote');
-          this.calculateResults();
-        }
-      }
-    }
-  
-  allVotesSubmitted() {
-    if (this.state === 'tiebreaker') {
-      return this.votes.size === this.tiebreakerPlayers.length;
-    }
-    return this.votes.size === this.players.length;
-  }
+    if (isCorrect) {
+      this.clearPlayerTimer(playerId);
 
-  calculateResults() {
-      // Calculate results for this match only
-      const voteCounts = new Map();
-      const votesArray = Array.from(this.votes.values());
+      // Award points
+      state.score += 1;
+      this.updatePlayerScore(playerId, state.score);
 
-      let totalVotesCast = 0;
+      // Success: Remove word from queue
+      state.queue.shift();
+      state.wordsCompleted++;
 
-      // Handle both single and array votes
-      votesArray.forEach(v => {
-          if (Array.isArray(v)) {
-              v.forEach(id => {
-                  voteCounts.set(id, (voteCounts.get(id) || 0) + 1);
-                  totalVotesCast++;
-              });
-          } else {
-              voteCounts.set(v, (voteCounts.get(v) || 0) + 1);
-              totalVotesCast++;
-          }
+      // Emit success feedback
+      this.emitToPlayer(playerId, 'answer-result', {
+        correct: true,
+        points: 1,
+        word: state.currentWord.word,
+        message: 'Recovered!'
       });
 
-      // Update scores based on votes in this match
-      const currentMatch = this.votingMatches[this.currentMatchIndex];
-      let matchWinners = [];
-      let maxVotes = 0;
-
-      // Identify candidates in this match
-      let candidates = [];
-      if (currentMatch.player1) { // Pair
-          candidates = [currentMatch.player1.id, currentMatch.player2.id];
-      } else if (currentMatch.answers) { // Thriple/Medals
-          candidates = currentMatch.answers.map(a => a.id || a.playerId);
-      } else if (currentMatch.mode === 'individual') {
-          candidates = currentMatch.answers.map(a => a.playerId);
-      }
-
-      // Tally
-      candidates.forEach(cid => {
-          const v = voteCounts.get(cid) || 0;
-          if (v > maxVotes) maxVotes = v;
-      });
-      
-      candidates.forEach(cid => {
-          const v = voteCounts.get(cid) || 0;
-          if (v === maxVotes && maxVotes > 0) matchWinners.push(cid);
-          
-          const player = this.getPlayer(cid);
-          if (player) {
-              if (this.isFinalRound()) { // Round 3: Medals
-                   // 500 points per medal
-                   player.score += (v * 500); 
-              } else { // Round 1 & 2: Percentage of Pot
-                   const baseValue = this.round === 1 ? 1000 : 2000;
-                   // Calculate percent of votes IN THIS MATCH
-                   const matchVotes = candidates.reduce((sum, c) => sum + (voteCounts.get(c)||0), 0);
-                   
-                   if (matchVotes > 0) {
-                       const percent = v / matchVotes;
-                       let points = Math.floor(percent * baseValue);
-                       
-                       // Quiplash Bonus: 100% of votes
-                       if (percent === 1.0 && matchVotes > 0) { // Ensure >0 to avoid 0/0
-                           const bonus = this.round === 1 ? 500 : 1000;
-                           points += bonus;
-                       }
-                       player.score += points;
-                   }
-              }
-          }
-      });
-
-      // Prepare Match Result Data
-      const results = {
-          matchIndex: this.currentMatchIndex,
-          votes: Object.fromEntries(voteCounts),
-          winners: matchWinners,
-          isFinal: this.isFinalRound()
-      };
-
-      if (this.emit) {
-          this.emit('match-results', results);
-      }
-
-      // Wait 3 seconds then next match
+      // Next word
       setTimeout(() => {
-          this.currentMatchIndex++;
-          this.startNextVotingMatch();
-      }, 5000); // 5s to see results
-  }
+        this.startMainLoop(playerId);
+      }, 1000);
+    } else {
+      // Lock input, wait for timer (soft fail)
+      state.inputLocked = true;
 
-  completeTiebreaker() {
-     const results = this.calculateTiebreakerResults();
-     if (results && this.emit) {
-        this.emit('show-results', { results });
-        setTimeout(() => {
-            if (this.startNextRound()) {
-              this.emit('intermission', { round: this.round, maxRounds: this.settings.maxRounds });
-            } else {
-              this.emit('game-over', { finalScores: this.getFinalScores() });
-            }
-        }, 5000);
-     }
-  }
-
-  completeVotingPhase() {
-    // Show cumulative results after all matches
-    const results = {
-        scores: this.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
-        isFinal: this.isFinalRound()
-    };
-
-    if (this.emit) {
-      this.emit('show-results', { results });
-
-      setTimeout(() => {
-        if (this.startNextRound()) {
-          this.emit('intermission', {
-            round: this.round,
-            maxRounds: this.settings.maxRounds,
-          });
-        } else {
-          this.emit('game-over', {
-            finalScores: this.getFinalScores(),
-          });
-        }
-      }, 5000);
-    }
-  }
-
-  handleTimerEnd(timerName) {
-    this.clearTimer(timerName);
-
-    if (timerName === 'intermission' && this.state === 'intermission') {
-      this.startAnsweringPhase();
-      if (this.emit) {
-        this.emit('start-answering', {
-          round: this.round,
-          maxRounds: this.settings.maxRounds,
-          prompts: this.getCurrentPrompts(),
-        });
-      }
-    } else if (timerName === 'answer' && this.state === 'answering') {
-      // Auto-submit random answers...
-       this.players.forEach((player) => {
-        const playerPrompts = this.currentPrompts.filter(p => p.playerId === player.id);
-        const playerAnswers = this.answers.get(player.id) || new Map();
-        playerPrompts.forEach(prompt => {
-          if (!playerAnswers.has(prompt.promptId)) {
-            this.submitAnswer(player.id, prompt.promptId, '(No answer submitted)');
-          }
-        });
+      this.emitToPlayer(playerId, 'answer-result', {
+        correct: false,
+        points: 0,
+        selectedId: selectedId,
+        message: 'Incorrect. Wait...'
       });
-    } else if (timerName === 'vote' && this.state === 'voting') {
-      this.calculateResults();
-    } else if (timerName === 'tiebreaker' && this.state === 'tiebreaker') {
-      this.completeTiebreaker();
+
+      // Do NOT stop timer - wait for timeout to proceed to third loop
     }
   }
 
-  clearTimer(timerName) {
-    const timer = this.timers.get(timerName);
-    if (timer && timer.interval) {
-      clearInterval(timer.interval);
-    }
-    this.timers.delete(timerName);
+  handleSecondLoopTimeout(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || state.loopState !== 'secondLoop') return;
+
+    // Move to third loop
+    this.startThirdLoop(playerId);
   }
+
+  // ===========================================================================
+  // THIRD LOOP (Binary Choice - 2 Options) - +0.5 points
+  // ===========================================================================
+
+  startThirdLoop(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || !state.currentWord) return;
+
+    state.loopState = 'thirdLoop';
+    state.inputLocked = false;
+
+    // Create 1 distractor + correct answer
+    const distractors = this.vocabularyData
+      .filter(item => item.id !== state.currentWord.id);
+    const shuffledDistractors = this.shuffleArray([...distractors]);
+    const options = this.shuffleArray([state.currentWord, shuffledDistractors[0]]);
+
+    // Emit to player: show 2 options
+    this.emitToPlayer(playerId, 'third-loop-start', {
+      image: state.currentWord.image,
+      options: options.map((opt, idx) => ({
+        id: opt.id,
+        word: opt.word,
+        index: idx + 1
+      })),
+      message: 'Last Chance! 50/50'
+    });
+
+    // Start timer
+    this.startPlayerTimer(playerId, this.settings.maxTime, () => {
+      this.handleThirdLoopTimeout(playerId);
+    });
+
+    this.broadcastProgress();
+  }
+
+  handleThirdLoopAnswer(playerId, selectedId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || state.loopState !== 'thirdLoop' || state.inputLocked) return;
+
+    const isCorrect = selectedId === state.currentWord.id;
+
+    if (isCorrect) {
+      this.clearPlayerTimer(playerId);
+
+      // Award points
+      state.score += 0.5;
+      this.updatePlayerScore(playerId, state.score);
+
+      // Success: Remove word from queue
+      state.queue.shift();
+      state.wordsCompleted++;
+
+      // Emit success feedback
+      this.emitToPlayer(playerId, 'answer-result', {
+        correct: true,
+        points: 0.5,
+        word: state.currentWord.word,
+        message: 'Saved!'
+      });
+
+      // Next word
+      setTimeout(() => {
+        this.startMainLoop(playerId);
+      }, 1000);
+    } else {
+      // Lock input, wait for timer
+      state.inputLocked = true;
+
+      this.emitToPlayer(playerId, 'answer-result', {
+        correct: false,
+        points: 0,
+        selectedId: selectedId,
+        message: 'Incorrect.'
+      });
+    }
+  }
+
+  handleThirdLoopTimeout(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || state.loopState !== 'thirdLoop') return;
+
+    // Time expired: Remove word anyway (processed)
+    state.queue.shift();
+    state.wordsCompleted++;
+
+    this.emitToPlayer(playerId, 'word-skipped', {
+      word: state.currentWord.word,
+      message: 'Word skipped.'
+    });
+
+    // Next word
+    setTimeout(() => {
+      this.startMainLoop(playerId);
+    }, 500);
+  }
+
+  // ===========================================================================
+  // GAME COMPLETION
+  // ===========================================================================
+
+  playerFinished(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state) return;
+
+    state.isFinished = true;
+    state.loopState = 'finished';
+    this.clearPlayerTimer(playerId);
+
+    // Sync score to player object
+    const player = this.getPlayer(playerId);
+    if (player) {
+      player.score = state.score;
+    }
+
+    this.emitToPlayer(playerId, 'player-finished', {
+      score: state.score,
+      message: 'You finished!'
+    });
+
+    this.broadcastProgress();
+
+    // Check if all players are finished
+    this.checkGameCompletion();
+  }
+
+  checkGameCompletion() {
+    const activePlayers = this.players.filter(p => p.isConnected && !p.isBot);
+
+    const allFinished = activePlayers.every(player => {
+      const state = this.playerStates.get(player.id);
+      return state && state.isFinished;
+    });
+
+    if (allFinished && activePlayers.length > 0) {
+      this.endGame();
+    }
+  }
+
+  endGame() {
+    this.state = 'results';
+
+    const finalScores = this.getFinalScores();
+
+    this.emitToAll('game-over', {
+      finalScores: finalScores,
+      winner: finalScores.length > 0 ? finalScores[0] : null
+    });
+
+    // After showing results, mark as finished
+    setTimeout(() => {
+      this.state = 'finished';
+    }, 10000);
+  }
+
+  // ===========================================================================
+  // PROGRESS & SCORES
+  // ===========================================================================
+
+  updatePlayerScore(playerId, newScore) {
+    const player = this.getPlayer(playerId);
+    if (player) {
+      player.score = newScore;
+    }
+    this.broadcastProgress();
+  }
+
+  broadcastProgress() {
+    const progress = this.getPlayersProgress();
+    this.emitToAll('progress-update', { players: progress });
+  }
+
+  getPlayersProgress() {
+    return this.players
+      .filter(p => !p.isBot)
+      .map(player => {
+        const state = this.playerStates.get(player.id);
+        return {
+          id: player.id,
+          name: player.name,
+          score: state ? state.score : 0,
+          wordsCompleted: state ? state.wordsCompleted : 0,
+          wordsTotal: state ? state.wordsTotal : this.vocabularyData.length,
+          loopState: state ? state.loopState : 'idle',
+          isFinished: state ? state.isFinished : false,
+          isConnected: player.isConnected
+        };
+      });
+  }
+
+  getFinalScores() {
+    return this.players
+      .filter(p => !p.isBot)
+      .map((p) => {
+        const state = this.playerStates.get(p.id);
+        return {
+          id: p.id,
+          name: p.name,
+          score: state ? state.score : p.score
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+
+  // ===========================================================================
+  // GAME STATE
+  // ===========================================================================
 
   getState() {
-    let answersSubmittedCount = 0;
-    this.answers.forEach(m => answersSubmittedCount += m.size);
-
     return {
       roomCode: this.roomCode,
       name: this.name,
       state: this.state,
-      round: this.round,
-      maxRounds: this.settings.maxRounds,
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -749,149 +702,85 @@ class Game {
         isConnected: p.isConnected !== false,
         isBot: !!p.isBot,
       })),
-      answersSubmitted: answersSubmittedCount,
       totalPlayers: this.players.length,
-      currentPrompts: this.state === 'answering' ? this.currentPrompts : [],
+      vocabularyCount: this.vocabularyData.length,
+      settings: this.settings
     };
   }
 
-  getCurrentPrompts() {
-    return this.currentPrompts;
+  // ===========================================================================
+  // CURRENT WORD INFO (For Host Display)
+  // ===========================================================================
+
+  getCurrentWordForPlayer(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || !state.currentWord) return null;
+
+    return {
+      image: state.currentWord.image,
+      // Don't expose the word to host - that would be cheating!
+      wordIndex: state.wordsCompleted + 1,
+      totalWords: state.wordsTotal,
+      loopState: state.loopState
+    };
   }
 
-  getRemainingAnswers() {
-    let answersSubmittedCount = 0;
-    this.answers.forEach(m => answersSubmittedCount += m.size);
-    return this.currentPrompts.length - answersSubmittedCount;
-  }
+  // Get the shared image to display on host (most common current image)
+  getHostDisplayImage() {
+    // For parallel play, all players see same shuffled queue differently
+    // Host could show a generic "Game in Progress" or the first player's image
+    const activePlayers = this.players.filter(p => p.isConnected && !p.isBot && !this.playerStates.get(p.id)?.isFinished);
 
-  getRemainingVotes() {
-    return this.players.length - this.votes.size;
-  }
+    if (activePlayers.length === 0) return null;
 
-  getFinalScores() {
-    return this.players
-      .map((p) => ({ name: p.name, score: p.score }))
-      .sort((a, b) => b.score - a.score);
+    // Return first active player's current image
+    const firstState = this.playerStates.get(activePlayers[0].id);
+    if (firstState && firstState.currentWord) {
+      return firstState.currentWord.image;
+    }
+    return null;
   }
+}
+
+// =============================================================================
+// BOT AI HELPERS (Scaffolding - To be implemented later)
+// =============================================================================
+
+async function generateBotAnswer(word, cefrLevel = 'B1') {
+  // TODO: Implement bot typing simulation
+  // For now, return the correct word with some random chance of failure
+  const shouldSucceed = Math.random() > 0.3; // 70% success rate
+  if (shouldSucceed) {
+    return word;
+  }
+  return 'wrong answer';
+}
+
+async function simulateBotChoice(correctId, options) {
+  // TODO: Implement bot choice simulation
+  // For now, random choice with bias toward correct answer
+  const shouldSucceed = Math.random() > 0.4; // 60% success rate
+  if (shouldSucceed) {
+    return correctId;
+  }
+  const wrongOptions = options.filter(o => o.id !== correctId);
+  return wrongOptions[Math.floor(Math.random() * wrongOptions.length)]?.id || correctId;
+}
+
+// =============================================================================
+// VOCABULARY LOADER (For future Level/Session support)
+// =============================================================================
+
+function loadVocabularyFromLevel(levelIndex, sessionIndex) {
+  // TODO: Implement Level/Session data structure
+  // For now, return default vocabulary
+  return [...DEFAULT_VOCABULARY];
+}
+
+async function fetchVocabularyFromAI(cefrLevel = 'B1') {
+  // TODO: Use local AI to generate vocabulary
+  // Placeholder for future implementation
+  return [...DEFAULT_VOCABULARY];
 }
 
 module.exports = GameManager;
-
-// --- Bot answer generation helpers ---
-
-async function generateBotAnswer(prompt, cefrLevel = 'B1') {
-  try {
-    const payload = JSON.stringify({
-      model: 'llama3.2:3b',
-      prompt: `Generate a short, funny answer to this prompt: "${prompt}". Use vocabulary appropriate for CEFR level ${cefrLevel}. Keep it under 50 characters.`,
-      stream: false,
-    });
-
-    const options = {
-      hostname: 'localhost',
-      port: 11434,
-      path: '/api/generate',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload),
-      },
-    };
-
-    const response = await new Promise((resolve, reject) => {
-      const req = http.request(options, (res) => {
-        let body = '';
-        res.on('data', (chunk) => body += chunk.toString());
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(body);
-            if (json && typeof json.response === 'string') {
-              resolve(json.response.trim());
-            } else {
-              reject(new Error('Unexpected AI response shape.'));
-            }
-          } catch (err) {
-            reject(err);
-          }
-        });
-      });
-      req.on('error', reject);
-      req.setTimeout(5000, () => {
-        req.destroy();
-        reject(new Error('Bot answer AI request timeout'));
-      });
-      req.write(payload);
-      req.end();
-    });
-
-    return response || 'Funny answer!';
-  } catch (err) {
-    console.error('Failed to generate bot answer:', err);
-    return 'Funny answer!';
-  }
-}
-
-// --- Local AI integration helpers ---
-
-/**
- * Ask the local LLaMA model ("llama3.2:3b") to generate a list of prompts at the specified CEFR level.
- *
- * Expected behavior: the model should return either a JSON array of strings,
- * or a newline-separated list of prompts. The Game class will normalize the
- * result in loadPromptsFromAIIfNeeded().
- */
-function fetchPromptsFromLocalAI(cefrLevel = 'B1') {
-  const payload = JSON.stringify({
-    model: 'llama3.2:3b',
-    prompt:
-      `Generate 50 absurd, hilarious Quiplash-style prompts. Each must be a short, ridiculous fill-in-the-blank question or statement ending with '______' for players to fill in, like 'The worst ice cream flavor: ______' or 'A terrible name for a cat: ______'. Make them funny and over-the-top. Use vocabulary appropriate for CEFR level ${cefrLevel}. Return ONLY a valid JSON array of strings, e.g., ["prompt1", "prompt2"]. No extra text or explanations.`,
-    stream: false,
-  });
-
-  const options = {
-    hostname: 'localhost',
-    port: 11434,
-    path: '/api/generate',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(payload),
-    },
-  };
-
-  return new Promise((resolve, reject) => {
-    const req = http.request(options, (res) => {
-      let body = '';
-
-      res.on('data', (chunk) => {
-        body += chunk.toString();
-      });
-
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(body);
-          if (json && typeof json.response === 'string') {
-            resolve(json.response.trim());
-          } else {
-            reject(new Error('Unexpected response shape from local AI.'));
-          }
-        } catch (err) {
-          reject(err);
-        }
-      });
-    });
-
-    req.on('error', (err) => {
-      reject(err);
-    });
-
-    req.setTimeout(10000, () => {
-      req.destroy();
-      reject(new Error('AI request timeout after 10 seconds'));
-    });
-
-    req.write(payload);
-    req.end();
-  });
-}

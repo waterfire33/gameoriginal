@@ -60,12 +60,35 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
   // Host creates a new game (host does not play)
-  socket.on('create-game', ({ playerName, gameName, maxRounds, votingMode, cefrLevel, debug = false }) => {
+  socket.on('create-game', ({ playerName, gameName, maxTime, cefrLevel, debug = false }) => {
     const settings = {};
-    if (maxRounds) settings.maxRounds = maxRounds;
-    if (votingMode) settings.votingMode = votingMode;
+    if (maxTime) settings.maxTime = maxTime;
     if (cefrLevel) settings.cefrLevel = cefrLevel;
-    const roomCode = gameManager.createGame(gameName, socket.id, playerName, settings, (event, data) => io.to(roomCode).emit(event, data), debug);
+    
+    // Create emit function that handles targeted vs broadcast emits
+    const emitFunction = (event, data) => {
+      if (data.targetPlayerId) {
+        // Targeted emit to specific player
+        const game = gameManager.getGame(roomCode);
+        if (game) {
+          const player = game.getPlayer(data.targetPlayerId);
+          if (player && player.socketId) {
+            io.to(player.socketId).emit(event, data);
+          }
+        }
+      } else if (data.targetHost) {
+        // Targeted emit to host
+        const game = gameManager.getGame(roomCode);
+        if (game && game.hostSocketId) {
+          io.to(game.hostSocketId).emit(event, data);
+        }
+      } else {
+        // Broadcast to all in room
+        io.to(roomCode).emit(event, data);
+      }
+    };
+    
+    const roomCode = gameManager.createGame(gameName, socket.id, playerName, settings, emitFunction, debug);
 
     socket.join(roomCode);
     const lanIps = getLanIPv4Addresses();
@@ -110,31 +133,31 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Player submits answer
-  socket.on('submit-answer', ({ roomCode, playerId, promptId, answer }) => {
+  // ===========================================================================
+  // TPR VOCABULARY GAME - Player Input Events
+  // ===========================================================================
+
+  // Player submits typed answer (Main Loop)
+  socket.on('submit-answer', ({ roomCode, playerId, answer }) => {
     const game = gameManager.getGame(roomCode);
     if (!game) return;
 
-    game.submitAnswer(playerId, promptId, answer);
-
-    // Broadcast to all players that someone answered
-    io.to(roomCode).emit('answer-submitted', {
-      playerId,
-      answersRemaining: game.getRemainingAnswers(),
-    });
+    game.handleMainLoopAnswer(playerId, answer);
   });
 
-  // Player submits vote
-  socket.on('submit-vote', ({ roomCode, playerId, voteId }) => {
+  // Player selects option (Second Loop - 4 choices)
+  socket.on('submit-choice', ({ roomCode, playerId, selectedId }) => {
     const game = gameManager.getGame(roomCode);
     if (!game) return;
 
-    game.submitVote(playerId, voteId);
+    const state = game.playerStates.get(playerId);
+    if (!state) return;
 
-    io.to(roomCode).emit('vote-submitted', {
-      playerId,
-      votesRemaining: game.getRemainingVotes(),
-    });
+    if (state.loopState === 'secondLoop') {
+      game.handleSecondLoopAnswer(playerId, selectedId);
+    } else if (state.loopState === 'thirdLoop') {
+      game.handleThirdLoopAnswer(playerId, selectedId);
+    }
   });
 
   // Add bot to game
@@ -193,21 +216,17 @@ io.on('connection', (socket) => {
     }
 
     console.log('Start game requested for', roomCode, 'players:', game.players.length, 'debug:', game.debugMode);
-    // Require at least 2 players (not counting host), or 1 in debug mode
-    if (game.players.length < (game.debugMode ? 1 : 2)) {
-      socket.emit('error', { message: `At least ${game.debugMode ? 1 : 2} player(s) are required to start the game.` });
+    // Require at least 1 player (not counting host), or 1 in debug mode
+    if (game.players.length < 1) {
+      socket.emit('error', { message: 'At least 1 player is required to start the game.' });
       return;
     }
 
     try {
-      await game.startGame();
-      io.to(roomCode).emit('game-started', {
-        round: game.round,
-        maxRounds: game.settings.maxRounds,
-        prompts: game.getCurrentPrompts(),
-      });
+      game.startGame();
+      // game-started event is emitted by the game itself
     } catch (err) {
-      console.error('Failed to start game with AI-generated prompts:', err);
+      console.error('Failed to start game:', err);
       socket.emit('error', { message: 'Failed to start game. Please try again.' });
     }
   });
